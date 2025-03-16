@@ -17,7 +17,15 @@ from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
 from typing import List, Dict, Any, Optional, Union
 
-from arxiv_query_fluent import Query, Field, Category, Opt, DateRange, FeedResults, Entry
+from arxiv_query_fluent import (
+    Query,
+    Field,
+    Category,
+    Opt,
+    DateRange,
+    FeedResults,
+    Entry,
+)
 from arxiv import SortCriterion, SortOrder
 from .downloader import ArxivDownloader
 
@@ -30,7 +38,7 @@ logger = logging.getLogger("mcp_arxiv_query")
 logger.info("Starting MCP ArXiv Query Server module")
 
 # reconfigure UnicodeEncodeError prone default (i.e. windows-1252) to utf-8
-if sys.platform == "win32" and os.environ.get('PYTHONIOENCODING') is None:
+if sys.platform == "win32" and os.environ.get("PYTHONIOENCODING") is None:
     sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
@@ -49,10 +57,10 @@ class ArxivQueryService:
         self.download_dir = Path(download_dir).expanduser().resolve()
         self.download_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"PDF download directory (resolved): {self.download_dir}")
-        
+
         # Initialize our enhanced downloader
         self.downloader = ArxivDownloader(download_dir)
-        
+
     def search_arxiv(
         self,
         query: str,
@@ -73,7 +81,7 @@ class ArxivQueryService:
             List of paper metadata including title, authors, and abstract
         """
         logger.debug(f"Searching arXiv with query: {query}")
-        
+
         # Map string parameters to enum values
         sort_criterion_map = {
             "relevance": "Relevance",
@@ -84,13 +92,19 @@ class ArxivQueryService:
             "ascending": "Ascending",
             "descending": "Descending",
         }
-        
-        sort_criterion = getattr(SortCriterion, sort_criterion_map.get(sort_by, "Relevance"))
+
+        sort_criterion = getattr(
+            SortCriterion, sort_criterion_map.get(sort_by, "Relevance")
+        )
         sort_order = getattr(SortOrder, sort_order_map.get(sort_order, "Descending"))
-        
+
         # Create a Query instance with the provided parameters
-        arxiv_query = Query(max_entries_per_pager=max_results, sortBy=sort_criterion, sortOrder=sort_order)
-        
+        arxiv_query = Query(
+            max_entries_per_pager=max_results,
+            sortBy=sort_criterion,
+            sortOrder=sort_order,
+        )
+
         try:
             # Execute the query
             results = arxiv_query.http_get(
@@ -100,29 +114,36 @@ class ArxivQueryService:
                 sortBy=sort_criterion,
                 sortOrder=sort_order,
             )
-            
+
             # Convert results to a list of dictionaries for easier serialization
             papers = []
             for entry in results.entrys:
-                papers.append({
-                    "id": entry.get_short_id(),
-                    "title": entry.title,
-                    "authors": [author.name for author in entry.authors],
-                    "published": str(entry.published),
-                    "updated": str(entry.updated),
-                    "abstract": entry.summary,
-                    "categories": entry.categories,
-                    "pdf_url": next((link.href for link in entry.links if link.title == "pdf"), None),
-                })
-            
+                papers.append(
+                    {
+                        "id": entry.get_short_id(),
+                        "title": entry.title,
+                        "authors": [author.name for author in entry.authors],
+                        "published": str(entry.published),
+                        "updated": str(entry.updated),
+                        "abstract": entry.summary,
+                        "categories": entry.categories,
+                        "pdf_url": next(
+                            (link.href for link in entry.links if link.title == "pdf"),
+                            None,
+                        ),
+                    }
+                )
+
             logger.debug(f"Found {len(papers)} papers matching query")
             return papers
-            
+
         except Exception as e:
             logger.error(f"Error searching arXiv: {e}")
             raise
 
-    def download_paper(self, paper_id: str, filename: Optional[str] = None) -> Dict[str, str]:
+    def download_paper(
+        self, paper_id: str, filename: Optional[str] = None
+    ) -> Dict[str, str]:
         """
         Download a paper by its arXiv ID.
 
@@ -134,35 +155,37 @@ class ArxivQueryService:
             Dictionary with the path to the downloaded file
         """
         logger.info(f"Downloading paper with ID: {paper_id}")
-        
+
         # First try to find the paper to validate it exists
         try:
             clean_id = self.downloader.clean_paper_id(paper_id)
             arxiv_query = Query()
-            
+
             try:
                 # First find the paper to confirm it exists
                 results = arxiv_query.add(Field.id, clean_id).get()
-                
+
                 if not results or not results.entrys:
                     logger.warning(f"Paper with ID {clean_id} not found in arXiv")
                     return {"error": f"Paper with ID {clean_id} not found in arXiv"}
-                
+
                 logger.info(f"Found paper: {results.entrys[0].title}")
-                
+
                 # Now use our enhanced downloader to actually download the PDF
                 download_result = self.downloader.download_paper(clean_id, filename)
-                
+
                 # Return the result from our download attempt
                 return download_result
-                
+
             except Exception as e:
                 logger.error(f"Error querying paper with ID {clean_id}: {e}")
-                
+
                 # Even if the query fails, still try direct download as fallback
-                logger.info(f"Attempting direct download for {clean_id} without query validation")
+                logger.info(
+                    f"Attempting direct download for {clean_id} without query validation"
+                )
                 return self.downloader.download_paper(clean_id, filename)
-                
+
         except Exception as e:
             err_msg = f"Error in download workflow: {str(e)}"
             logger.error(err_msg)
@@ -188,7 +211,7 @@ class ArxivQueryService:
             List of paper metadata including title, authors, and abstract
         """
         logger.debug(f"Searching arXiv by category: {category}")
-        
+
         # Map string parameters to enum values
         sort_criterion_map = {
             "relevance": "Relevance",
@@ -199,38 +222,45 @@ class ArxivQueryService:
             "ascending": "Ascending",
             "descending": "Descending",
         }
-        
-        sort_criterion = getattr(SortCriterion, sort_criterion_map.get(sort_by, "SubmittedDate"))
+
+        sort_criterion = getattr(
+            SortCriterion, sort_criterion_map.get(sort_by, "SubmittedDate")
+        )
         sort_order = getattr(SortOrder, sort_order_map.get(sort_order, "Descending"))
-        
+
         try:
             # Create and execute the query
             arxiv_query = Query(
                 max_entries_per_pager=max_results,
                 sortBy=sort_criterion,
-                sortOrder=sort_order
+                sortOrder=sort_order,
             )
-            
+
             # Add category constraint and execute
             results = arxiv_query.add(Field.category, category).get()
-            
+
             # Convert results to a list of dictionaries
             papers = []
             for entry in results.entrys:
-                papers.append({
-                    "id": entry.get_short_id(),
-                    "title": entry.title,
-                    "authors": [author.name for author in entry.authors],
-                    "published": str(entry.published),
-                    "updated": str(entry.updated),
-                    "abstract": entry.summary,
-                    "categories": entry.categories,
-                    "pdf_url": next((link.href for link in entry.links if link.title == "pdf"), None),
-                })
-            
+                papers.append(
+                    {
+                        "id": entry.get_short_id(),
+                        "title": entry.title,
+                        "authors": [author.name for author in entry.authors],
+                        "published": str(entry.published),
+                        "updated": str(entry.updated),
+                        "abstract": entry.summary,
+                        "categories": entry.categories,
+                        "pdf_url": next(
+                            (link.href for link in entry.links if link.title == "pdf"),
+                            None,
+                        ),
+                    }
+                )
+
             logger.debug(f"Found {len(papers)} papers in category {category}")
             return papers
-            
+
         except Exception as e:
             logger.error(f"Error searching by category: {e}")
             raise
@@ -255,7 +285,7 @@ class ArxivQueryService:
             List of paper metadata including title, authors, and abstract
         """
         logger.debug(f"Searching arXiv by author: {author}")
-        
+
         # Map string parameters to enum values
         sort_criterion_map = {
             "relevance": "Relevance",
@@ -266,38 +296,45 @@ class ArxivQueryService:
             "ascending": "Ascending",
             "descending": "Descending",
         }
-        
-        sort_criterion = getattr(SortCriterion, sort_criterion_map.get(sort_by, "SubmittedDate"))
+
+        sort_criterion = getattr(
+            SortCriterion, sort_criterion_map.get(sort_by, "SubmittedDate")
+        )
         sort_order = getattr(SortOrder, sort_order_map.get(sort_order, "Descending"))
-        
+
         try:
             # Create and execute the query
             arxiv_query = Query(
                 max_entries_per_pager=max_results,
                 sortBy=sort_criterion,
-                sortOrder=sort_order
+                sortOrder=sort_order,
             )
-            
+
             # Add author constraint and execute
             results = arxiv_query.add(Field.author, author).get()
-            
+
             # Convert results to a list of dictionaries
             papers = []
             for entry in results.entrys:
-                papers.append({
-                    "id": entry.get_short_id(),
-                    "title": entry.title,
-                    "authors": [author.name for author in entry.authors],
-                    "published": str(entry.published),
-                    "updated": str(entry.updated),
-                    "abstract": entry.summary,
-                    "categories": entry.categories,
-                    "pdf_url": next((link.href for link in entry.links if link.title == "pdf"), None),
-                })
-            
+                papers.append(
+                    {
+                        "id": entry.get_short_id(),
+                        "title": entry.title,
+                        "authors": [author.name for author in entry.authors],
+                        "published": str(entry.published),
+                        "updated": str(entry.updated),
+                        "abstract": entry.summary,
+                        "categories": entry.categories,
+                        "pdf_url": next(
+                            (link.href for link in entry.links if link.title == "pdf"),
+                            None,
+                        ),
+                    }
+                )
+
             logger.debug(f"Found {len(papers)} papers by author {author}")
             return papers
-            
+
         except Exception as e:
             logger.error(f"Error searching by author: {e}")
             raise
@@ -307,12 +344,16 @@ async def main(download_dir: str):
     """Main entry point for the server."""
     # Ensure download directory is set to Docker mount point
     if download_dir != "/app/Downloads":
-        logger.warning(f"Remapping download directory from {download_dir} to /app/Downloads to match Docker volume mount")
+        logger.warning(
+            f"Remapping download directory from {download_dir} to /app/Downloads to match Docker volume mount"
+        )
         download_dir = "/app/Downloads"
-        
+
     # Make the path absolute and resolved
     download_dir = str(Path(download_dir).expanduser().resolve())
-    logger.info(f"Starting ArXiv Query MCP Server with download directory: {download_dir}")
+    logger.info(
+        f"Starting ArXiv Query MCP Server with download directory: {download_dir}"
+    )
 
     # Initialize service
     arxiv_service = ArxivQueryService(download_dir)
@@ -472,33 +513,39 @@ async def main(download_dir: str):
         name: str, arguments: dict[str, Any] | None
     ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
         """Handle tool execution requests"""
-        logger.debug(f"Handling call_tool request for {name} with arguments {arguments}")
-        
+        logger.debug(
+            f"Handling call_tool request for {name} with arguments {arguments}"
+        )
+
         try:
             if not arguments:
                 arguments = {}
-                
+
             # Ensure arguments are Python native types (not JSON strings)
             if isinstance(arguments, str):
                 arguments = json.loads(arguments)
-                
+
             if name == "search_arxiv":
                 if "query" not in arguments:
                     raise ValueError("Missing required argument 'query'")
-                
+
                 result = arxiv_service.search_arxiv(**arguments)
-                return [types.TextContent(
-                    type="text",
-                    text=json.dumps(result, ensure_ascii=False, indent=2)
-                )]
-                
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=json.dumps(result, ensure_ascii=False, indent=2),
+                    )
+                ]
+
             elif name == "download_paper":
                 if "paper_id" not in arguments:
                     raise ValueError("Missing required argument 'paper_id'")
-                
-                logger.info(f"Processing download request for paper_id: {arguments['paper_id']}")
+
+                logger.info(
+                    f"Processing download request for paper_id: {arguments['paper_id']}"
+                )
                 result = arxiv_service.download_paper(**arguments)
-                
+
                 # Check if download was successful and file exists
                 if "file_path" in result:
                     file_path = result["file_path"]
@@ -507,62 +554,68 @@ async def main(download_dir: str):
                         file_size = os.path.getsize(file_path)
                         result["file_size"] = f"{file_size / 1024:.1f} KB"
                     else:
-                        logger.warning(f"Reported file path does not exist: {file_path}")
+                        logger.warning(
+                            f"Reported file path does not exist: {file_path}"
+                        )
                         result["warning"] = "File path reported but file not found"
-                
-                return [types.TextContent(
-                    type="text",
-                    text=json.dumps(result, ensure_ascii=False, indent=2)
-                )]
-                
+
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=json.dumps(result, ensure_ascii=False, indent=2),
+                    )
+                ]
+
             elif name == "search_by_category":
                 if "category" not in arguments:
                     raise ValueError("Missing required argument 'category'")
-                
+
                 result = arxiv_service.search_by_category(**arguments)
-                return [types.TextContent(
-                    type="text",
-                    text=json.dumps(result, ensure_ascii=False, indent=2)
-                )]
-                
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=json.dumps(result, ensure_ascii=False, indent=2),
+                    )
+                ]
+
             elif name == "search_by_author":
                 if "author" not in arguments:
                     raise ValueError("Missing required argument 'author'")
-                
+
                 result = arxiv_service.search_by_author(**arguments)
-                return [types.TextContent(
-                    type="text",
-                    text=json.dumps(result, ensure_ascii=False, indent=2)
-                )]
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=json.dumps(result, ensure_ascii=False, indent=2),
+                    )
+                ]
 
             elif name == "pdf_to_text":
                 if "pdf_path" not in arguments:
                     raise ValueError("Missing required argument 'pdf_path'")
-                
-                logger.info(f"Processing PDF to text request for file: {arguments['pdf_path']}")
-                result = pdf_to_text(arguments['pdf_path'])
-                
+
+                logger.info(
+                    f"Processing PDF to text request for file: {arguments['pdf_path']}"
+                )
+                result = pdf_to_text(arguments["pdf_path"])
+
                 if "error" in result:
-                    return [types.TextContent(
-                        type="text",
-                        text=json.dumps(result, ensure_ascii=False, indent=2)
-                    )]
+                    return [
+                        types.TextContent(
+                            type="text",
+                            text=json.dumps(result, ensure_ascii=False, indent=2),
+                        )
+                    ]
                 else:
                     # 直接返回轉換後的文字內容，方便顯示
-                    return [types.TextContent(
-                        type="text",
-                        text=result["text"]
-                    )]
-                
+                    return [types.TextContent(type="text", text=result["text"])]
+
             else:
                 raise ValueError(f"Unknown tool: {name}")
-                
+
         except Exception as e:
             logger.exception(f"Error calling tool {name}: {e}")
-            return [types.TextContent(
-                type="text",
-                text=f"Error: {str(e)}"
-            )]
+            return [types.TextContent(type="text", text=f"Error: {str(e)}")]
 
     # Start server with stdio transport
     try:

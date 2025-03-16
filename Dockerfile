@@ -17,9 +17,6 @@ RUN pip install --no-cache-dir "arxiv>=1.4.8" && \
     pip install --no-cache-dir "PyPDF2>=3.0.0" && \
     pip install -e .
 
-# 建立下載目錄並賦予適當權限
-RUN mkdir -p /app/Downloads && chmod 777 /app/Downloads
-
 # 設定環境變數
 ENV PYTHONUNBUFFERED=1
 
