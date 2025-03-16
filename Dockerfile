@@ -14,6 +14,7 @@ COPY . .
 RUN pip install --no-cache-dir "arxiv>=1.4.8" && \
     pip install --no-cache-dir arxiv-query-fluent && \
     pip install --no-cache-dir "mcp>=1.0.0" && \
+    pip install --no-cache-dir "PyPDF2>=3.0.0" && \
     pip install -e .
 
 # 建立下載目錄並賦予適當權限

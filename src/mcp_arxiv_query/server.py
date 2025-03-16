@@ -10,6 +10,7 @@ import json
 import logging
 from pathlib import Path
 from pydantic import AnyUrl
+from .pdf_utils import pdf_to_text
 from mcp.server.models import InitializationOptions
 import mcp.types as types
 from mcp.server import NotificationOptions, Server
@@ -450,6 +451,20 @@ async def main(download_dir: str):
                     },
                 },
             ),
+            types.Tool(
+                name="pdf_to_text",
+                description="將 PDF 檔案轉換為文字，支援將 LaTeX 公式轉為 Markdown 格式",
+                inputSchema={
+                    "type": "object",
+                    "required": ["pdf_path"],
+                    "properties": {
+                        "pdf_path": {
+                            "type": "string",
+                            "description": "PDF 檔案的完整路徑",
+                        },
+                    },
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -519,6 +534,25 @@ async def main(download_dir: str):
                     type="text",
                     text=json.dumps(result, ensure_ascii=False, indent=2)
                 )]
+
+            elif name == "pdf_to_text":
+                if "pdf_path" not in arguments:
+                    raise ValueError("Missing required argument 'pdf_path'")
+                
+                logger.info(f"Processing PDF to text request for file: {arguments['pdf_path']}")
+                result = pdf_to_text(arguments['pdf_path'])
+                
+                if "error" in result:
+                    return [types.TextContent(
+                        type="text",
+                        text=json.dumps(result, ensure_ascii=False, indent=2)
+                    )]
+                else:
+                    # 直接返回轉換後的文字內容，方便顯示
+                    return [types.TextContent(
+                        type="text",
+                        text=result["text"]
+                    )]
                 
             else:
                 raise ValueError(f"Unknown tool: {name}")
