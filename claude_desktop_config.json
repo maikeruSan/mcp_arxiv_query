@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "arxiv-query": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-v",
+        "$HOME/Downloads:/app/Downloads",
+        "mcp-arxiv-query"
+      ]
+    }
+  }
+}

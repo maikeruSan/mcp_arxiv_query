@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp_arxiv_query"
+version = "0.1.0"
+description = "MCP service for arXiv paper search using arxiv_query_fluent"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "arxiv-query-fluent",
+    "arxiv>=1.4.8"
+]
+
+[project.scripts]
+mcp-arxiv-query = "mcp_arxiv_query:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
