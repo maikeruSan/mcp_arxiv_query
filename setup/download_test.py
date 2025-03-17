@@ -10,6 +10,11 @@ import logging
 import argparse
 from pathlib import Path
 
+# 將專案根目錄添加到 Python 路徑
+script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+project_root = script_dir.parent
+sys.path.insert(0, str(project_root))
+
 # 配置日誌
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("arxiv-test")

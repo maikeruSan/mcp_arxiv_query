@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# 切换到项目根目录
+cd "$(dirname "$0")/.."
+
 echo "建構 MCP ArXiv Query Docker 映像..."
 docker build -t mcp-arxiv-query .
 

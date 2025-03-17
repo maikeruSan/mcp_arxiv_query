@@ -4,7 +4,7 @@
 chmod +x "$(dirname "$0")/build_image.sh"
 
 # 確定專案根目錄
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # 清理舊映像（如果需要）
 echo "清理舊映像（如果存在）..."

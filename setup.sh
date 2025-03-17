@@ -1,42 +1,11 @@
 #!/bin/bash
+# 轉發到 setup 資料夾中的主要設置腳本
 
-echo "===== arXiv MCP 伺服器設置 ====="
-echo "設置執行權限..."
-chmod +x build_image.sh
-chmod +x build_and_test.sh
-chmod +x download_test.py
-chmod +x fix_permissions.sh
+# 確保 setup 目錄中的腳本有執行權限
+chmod +x "$(dirname "$0")/setup/setup.sh"
 
-echo "選擇操作:"
-echo "1. 構建 Docker 映像"
-echo "2. 構建映像並測試"
-echo "3. 僅測試 PDF 下載"
-echo "4. 退出"
+# 切換到 setup 目錄並執行主要 setup.sh
+cd "$(dirname "$0")/setup" && ./setup.sh
 
-read -p "請選擇 [1-4]: " choice
-
-case $choice in
-  1)
-    echo "構建 Docker 映像..."
-    ./build_image.sh
-    ;;
-  2)
-    echo "構建映像並測試..."
-    ./build_and_test.sh
-    ;;
-  3)
-    echo "測試 PDF 下載..."
-    read -p "輸入要下載的論文 ID (例如 2303.08774): " paper_id
-    ./download_test.py $paper_id
-    ;;
-  4)
-    echo "退出"
-    exit 0
-    ;;
-  *)
-    echo "無效選擇"
-    exit 1
-    ;;
-esac
-
-echo "完成!"
+# 保持與原始 setup.sh 相同的退出碼
+exit $?
