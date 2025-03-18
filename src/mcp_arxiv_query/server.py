@@ -7,7 +7,7 @@ This server provides MCP tools for searching and retrieving arXiv papers using a
 import os
 import sys
 import json
-import logging
+from mcp_arxiv_query.logger import setup_logging
 from pathlib import Path
 from pydantic import AnyUrl
 from .pdf_utils import pdf_to_text
@@ -16,6 +16,7 @@ import mcp.types as types
 from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
 from typing import List, Dict, Any, Optional, Union
+import time
 
 from arxiv_query_fluent import (
     Query,
@@ -29,12 +30,7 @@ from arxiv_query_fluent import (
 from arxiv import SortCriterion, SortOrder
 from .downloader import ArxivDownloader
 
-# 設定日誌
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger("mcp_arxiv_query")
+logger = setup_logging()
 logger.info("Starting MCP ArXiv Query Server module")
 
 # reconfigure UnicodeEncodeError prone default (i.e. windows-1252) to utf-8
@@ -59,7 +55,7 @@ class ArxivQueryService:
         logger.info(f"PDF download directory (resolved): {self.download_dir}")
 
         # Initialize our enhanced downloader
-        self.downloader = ArxivDownloader(download_dir)
+        # self.downloader = ArxivDownloader(download_dir)
 
     def search_arxiv(
         self,
@@ -93,9 +89,7 @@ class ArxivQueryService:
             "descending": "Descending",
         }
 
-        sort_criterion = getattr(
-            SortCriterion, sort_criterion_map.get(sort_by, "Relevance")
-        )
+        sort_criterion = getattr(SortCriterion, sort_criterion_map.get(sort_by, "Relevance"))
         sort_order = getattr(SortOrder, sort_order_map.get(sort_order, "Descending"))
 
         # Create a Query instance with the provided parameters
@@ -141,8 +135,36 @@ class ArxivQueryService:
             logger.error(f"Error searching arXiv: {e}")
             raise
 
+    @staticmethod
+    def clean_paper_id(paper_id: str) -> str:
+        """
+        Clean an arXiv paper ID by removing version numbers and extracting the core ID.
+
+        Args:
+            paper_id: ArXiv paper ID (potentially with version or as a URL)
+
+        Returns:
+            Clean paper ID without version numbers or URL components
+        """
+        clean_id = paper_id.strip()
+
+        # Handle URLs like https://arxiv.org/abs/2301.00001v1
+        if "/" in clean_id:
+            clean_id = clean_id.split("/")[-1]
+
+        # Handle version numbers like 2301.00001v1
+        if "v" in clean_id and any(c.isdigit() for c in clean_id.split("v")[-1]):
+            clean_id = clean_id.split("v")[0]
+
+        logger.debug(f"Cleaned paper ID from '{paper_id}' to '{clean_id}'")
+        return clean_id
+
     def download_paper(
-        self, paper_id: str, filename: Optional[str] = None
+        self,
+        paper_id: str,
+        filename: Optional[str] = None,
+        max_retries: int = 10,
+        retry_delay: int = 5,
     ) -> Dict[str, str]:
         """
         Download a paper by its arXiv ID.
@@ -156,40 +178,28 @@ class ArxivQueryService:
         """
         logger.info(f"Downloading paper with ID: {paper_id}")
 
-        # First try to find the paper to validate it exists
-        try:
-            clean_id = self.downloader.clean_paper_id(paper_id)
-            arxiv_query = Query()
-
+        for attempt in range(1, max_retries + 1):
+            # First try to find the paper to validate it exists
             try:
                 # First find the paper to confirm it exists
-                results = arxiv_query.add(Field.id, clean_id).get()
-
+                clean_id = ArxivQueryService.clean_paper_id(paper_id)
+                results = Query().add(Field.id, clean_id).get()
                 if not results or not results.entrys:
-                    logger.warning(f"Paper with ID {clean_id} not found in arXiv")
-                    return {"error": f"Paper with ID {clean_id} not found in arXiv"}
+                    logger.warning(f"Paper with ID {paper_id} not found in arXiv")
+                    return {"error": f"Paper with ID {paper_id} not found in arXiv"}
 
-                logger.info(f"Found paper: {results.entrys[0].title}")
-
-                # Now use our enhanced downloader to actually download the PDF
-                download_result = self.downloader.download_paper(clean_id, filename)
-
-                # Return the result from our download attempt
-                return download_result
-
+                logger.info(f"Found paper: {results.entrys[0].title}, using 'arxiv_query_fluent' to download the PDF ")
+                download_id = results.entrys[0].get_short_id()
+                download_path = results.download_pdf(download_id, self.download_dir, filename)
+                return {"file_path": str(download_path)}
             except Exception as e:
-                logger.error(f"Error querying paper with ID {clean_id}: {e}")
+                err_msg = f"Error in download workflow: {str(e)}"
+                logger.error(err_msg)
+                if attempt < max_retries:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
 
-                # Even if the query fails, still try direct download as fallback
-                logger.info(
-                    f"Attempting direct download for {clean_id} without query validation"
-                )
-                return self.downloader.download_paper(clean_id, filename)
-
-        except Exception as e:
-            err_msg = f"Error in download workflow: {str(e)}"
-            logger.error(err_msg)
-            return {"error": err_msg}
+        return {"error": f"Failed to download PDF after {max_retries} attempts"}
 
     def search_by_category(
         self,
@@ -223,9 +233,7 @@ class ArxivQueryService:
             "descending": "Descending",
         }
 
-        sort_criterion = getattr(
-            SortCriterion, sort_criterion_map.get(sort_by, "SubmittedDate")
-        )
+        sort_criterion = getattr(SortCriterion, sort_criterion_map.get(sort_by, "SubmittedDate"))
         sort_order = getattr(SortOrder, sort_order_map.get(sort_order, "Descending"))
 
         try:
@@ -297,9 +305,7 @@ class ArxivQueryService:
             "descending": "Descending",
         }
 
-        sort_criterion = getattr(
-            SortCriterion, sort_criterion_map.get(sort_by, "SubmittedDate")
-        )
+        sort_criterion = getattr(SortCriterion, sort_criterion_map.get(sort_by, "SubmittedDate"))
         sort_order = getattr(SortOrder, sort_order_map.get(sort_order, "Descending"))
 
         try:
@@ -343,17 +349,15 @@ class ArxivQueryService:
 async def main(download_dir: str):
     """Main entry point for the server."""
     # Ensure download directory is set to Docker mount point
-    if download_dir != "/app/Downloads":
-        logger.warning(
-            f"Remapping download directory from {download_dir} to /app/Downloads to match Docker volume mount"
-        )
-        download_dir = "/app/Downloads"
+    # if download_dir != "/app/Downloads":
+    #    logger.warning(
+    #        f"Remapping download directory from {download_dir} to /app/Downloads to match Docker volume mount"
+    #    )
+    #    download_dir = "/app/Downloads"
 
     # Make the path absolute and resolved
     download_dir = str(Path(download_dir).expanduser().resolve())
-    logger.info(
-        f"Starting ArXiv Query MCP Server with download directory: {download_dir}"
-    )
+    logger.info(f"Starting ArXiv Query MCP Server with download directory: {download_dir}")
 
     # Initialize service
     arxiv_service = ArxivQueryService(download_dir)
@@ -509,13 +513,9 @@ async def main(download_dir: str):
         ]
 
     @server.call_tool()
-    async def handle_call_tool(
-        name: str, arguments: dict[str, Any] | None
-    ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
         """Handle tool execution requests"""
-        logger.debug(
-            f"Handling call_tool request for {name} with arguments {arguments}"
-        )
+        logger.debug(f"Handling call_tool request for {name} with arguments {arguments}")
 
         try:
             if not arguments:
@@ -541,9 +541,7 @@ async def main(download_dir: str):
                 if "paper_id" not in arguments:
                     raise ValueError("Missing required argument 'paper_id'")
 
-                logger.info(
-                    f"Processing download request for paper_id: {arguments['paper_id']}"
-                )
+                logger.info(f"Processing download request for paper_id: {arguments['paper_id']}")
                 result = arxiv_service.download_paper(**arguments)
 
                 # Check if download was successful and file exists
@@ -554,9 +552,7 @@ async def main(download_dir: str):
                         file_size = os.path.getsize(file_path)
                         result["file_size"] = f"{file_size / 1024:.1f} KB"
                     else:
-                        logger.warning(
-                            f"Reported file path does not exist: {file_path}"
-                        )
+                        logger.warning(f"Reported file path does not exist: {file_path}")
                         result["warning"] = "File path reported but file not found"
 
                 return [
@@ -594,9 +590,7 @@ async def main(download_dir: str):
                 if "pdf_path" not in arguments:
                     raise ValueError("Missing required argument 'pdf_path'")
 
-                logger.info(
-                    f"Processing PDF to text request for file: {arguments['pdf_path']}"
-                )
+                logger.info(f"Processing PDF to text request for file: {arguments['pdf_path']}")
                 result = pdf_to_text(arguments["pdf_path"])
 
                 if "error" in result:

@@ -46,7 +46,8 @@ class ArxivDownloader:
             logger.error(f"Download directory {self.download_dir} is NOT writable: {e}")
             return False
 
-    def clean_paper_id(self, paper_id: str) -> str:
+    @staticmethod
+    def clean_paper_id(paper_id: str) -> str:
         """
         Clean an arXiv paper ID by removing version numbers and extracting the core ID.
 
@@ -118,22 +119,15 @@ class ArxivDownloader:
                 logger.info(f"Download attempt {attempt}/{max_retries} for {pdf_url}")
 
                 # Create a request with a user agent to avoid potential blocks
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
-                }
+                headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"}
                 request = urllib.request.Request(pdf_url, headers=headers)
 
                 # Download with timeout
                 with urllib.request.urlopen(request, timeout=30) as response:
                     # Check content type to ensure it's a PDF
                     content_type = response.getheader("Content-Type", "")
-                    if (
-                        "application/pdf" not in content_type.lower()
-                        and "pdf" not in content_type.lower()
-                    ):
-                        logger.warning(
-                            f"Content type '{content_type}' may not be a PDF"
-                        )
+                    if "application/pdf" not in content_type.lower() and "pdf" not in content_type.lower():
+                        logger.warning(f"Content type '{content_type}' may not be a PDF")
 
                     # Get content length if available
                     content_length = response.getheader("Content-Length")
@@ -149,14 +143,10 @@ class ArxivDownloader:
                     # Verify download
                     if download_path.exists() and download_path.stat().st_size > 0:
                         file_size = download_path.stat().st_size
-                        logger.info(
-                            f"Successfully downloaded {file_size / 1024:.1f} KB to {download_path}"
-                        )
+                        logger.info(f"Successfully downloaded {file_size / 1024:.1f} KB to {download_path}")
                         return {"file_path": str(download_path), "size": file_size}
                     else:
-                        logger.error(
-                            f"File was created but appears to be empty: {download_path}"
-                        )
+                        logger.error(f"File was created but appears to be empty: {download_path}")
                         if attempt < max_retries:
                             logger.info(f"Retrying in {retry_delay} seconds...")
                             time.sleep(retry_delay)
@@ -176,9 +166,7 @@ class ArxivDownloader:
         # If all attempts failed
         return {"error": f"Failed to download PDF after {max_retries} attempts"}
 
-    def download_papers_batch(
-        self, paper_ids: list, delay_between_downloads: float = 1.0
-    ) -> Dict[str, Dict[str, str]]:
+    def download_papers_batch(self, paper_ids: list, delay_between_downloads: float = 1.0) -> Dict[str, Dict[str, str]]:
         """
         Download multiple papers in sequence with a delay between downloads.
 

@@ -20,10 +20,13 @@ echo "* 啟動新容器..."
 # 啟動新容器
 docker run -d --name $CONTAINER_NAME \
   -p 5173:5173 -p 3000:3000 \
+  -e LOG_LEVEL=DEBUG \
+  -e LOG_FORMAT=!JSON \
+  -e DOWNLOAD_DIR='/tmp' \
   --volume $HOME/Downloads:/app/Downloads \
   --volume $CURRENT_DIR:/app \
   dev_mcp-arxiv-query \
-  /bin/bash -c "pip install -e /app/. && npx -y @modelcontextprotocol/inspector python -m mcp_arxiv_query"
+  /bin/bash -c "pip install -e /app/. && npx -y @modelcontextprotocol/inspector uv run -m mcp_arxiv_query"
 
 # 檢查容器是否成功啟動
 if docker ps | grep -q $CONTAINER_NAME; then
