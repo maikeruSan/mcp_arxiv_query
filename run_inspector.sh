@@ -16,13 +16,29 @@ fi
 # 獲取當前目錄的絕對路徑
 CURRENT_DIR=$(pwd)
 
+# 構建環境變數參數
+ENV_PARAMS="-e LOG_LEVEL=DEBUG \
+  -e LOG_FORMAT=!JSON \
+  -e DOWNLOAD_DIR=/app/Downloads \
+  -e ARXIV_MAX_CALLS_PER_MINUTE=30 \
+  -e ARXIV_MAX_CALLS_PER_DAY=720 \
+  -e ARXIV_MIN_INTERVAL_SECONDS=1"
+
+# 檢查 MISTRAL_OCR_API_KEY 環境變數是否存在
+if [ -n "${MISTRAL_OCR_API_KEY}" ]; then
+  # 環境變數存在，添加到 docker run 參數中
+  ENV_PARAMS="${ENV_PARAMS} \
+  -e MISTRAL_OCR_API_KEY=${MISTRAL_OCR_API_KEY}"
+  echo "* 使用 MISTRAL_OCR_API_KEY 環境變數"
+else
+  echo "* MISTRAL_OCR_API_KEY 環境變數未設置，忽略該參數"
+fi
+
 echo "* 啟動新容器..."
 # 啟動新容器
 docker run -d --name $CONTAINER_NAME \
   -p 5173:5173 -p 3000:3000 \
-  -e LOG_LEVEL=DEBUG \
-  -e LOG_FORMAT=!JSON \
-  -e DOWNLOAD_DIR='/tmp' \
+  ${ENV_PARAMS} \
   --volume $HOME/Downloads:/app/Downloads \
   --volume $CURRENT_DIR:/app \
   dev_mcp-arxiv-query \

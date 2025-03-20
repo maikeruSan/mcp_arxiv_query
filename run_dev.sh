@@ -18,7 +18,7 @@ CURRENT_DIR=$(pwd)
 
 echo "* 啟動新容器..."
 # 啟動新容器
-docker run -it --name $CONTAINER_NAME \
+docker run -d --name $CONTAINER_NAME \
   --volume $HOME/Downloads:/app/Downloads \
   --volume $CURRENT_DIR:/app \
   dev_mcp-arxiv-query \

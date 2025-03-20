@@ -16,7 +16,9 @@ classifiers = [
 dependencies = [
     "mcp>=1.0.0",
     "arxiv-query-fluent",
-    "arxiv>=1.4.8"
+    "arxiv>=1.4.8",
+    "httpx>=0.24.0",
+    "PyPDF2"
 ]
 
 [project.scripts]

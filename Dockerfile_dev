@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir "arxiv>=1.4.8" && \
     pip install --no-cache-dir arxiv-query-fluent && \
     pip install --no-cache-dir "mcp>=1.0.0" && \
+    pip install --no-cache-dir "httpx>=0.24.0" && \
     pip install --no-cache-dir "PyPDF2>=3.0.0"
 
 # 安裝 uv - 使用 pip 方式安裝
