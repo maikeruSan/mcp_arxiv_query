@@ -1,8 +1,10 @@
 """
-PDF 轉換工具模組。
+PDF Conversion Utilities Module
+===============================
 
-提供將 PDF 檔案轉換為文字的功能，特別針對科學論文有基本的 LaTeX 公式處理。
-支援使用 Mistral OCR API 進行 PDF 文字識別，或使用本地 PyPDF2 處理。
+Provides functionality to convert PDF files to text, with special handling for scientific papers
+including basic LaTeX formula processing. Supports text extraction using either the Mistral OCR API
+for high-quality results or local processing with PyPDF2 as a fallback option.
 """
 
 import os
@@ -19,139 +21,151 @@ logger = logging.getLogger("mcp_arxiv_query.pdf_utils")
 
 def extract_arxiv_id_from_path(pdf_path: str) -> Optional[str]:
     """
-    從 PDF 檔案路徑提取 arXiv ID。
+    Extract arXiv ID from a PDF file path.
+
+    Attempts to extract an arXiv identifier from the file name portion of a path,
+    supporting both new-style (YYMM.NNNNN) and old-style (arch-ive/YYMMNNN) formats,
+    with or without version numbers.
 
     Args:
-        pdf_path: PDF 檔案的路徑
+        pdf_path: Path to the PDF file
 
     Returns:
-        提取的 arXiv ID 或 None（如果無法提取）
+        str or None: The extracted arXiv ID without version number, or None if extraction fails
     """
-    # 取得檔案名稱（不含路徑）
+    # Get filename without path
     filename = os.path.basename(pdf_path)
 
-    # 移除 .pdf 副檔名（如果有）
+    # Remove .pdf extension if present
     if filename.lower().endswith(".pdf"):
         filename = filename[:-4]
 
-    # 檢查是否符合 arXiv ID 格式
-    # 新式格式: YYMM.NNNNN 或 YYMM.NNNNN vN
-    # 舊式格式: arch-ive/YYMMNNN 或 arch-ive/YYMMNNN vN
+    # Check if the filename matches arXiv ID format
+    # New format: YYMM.NNNNN or YYMM.NNNNN vN
+    # Old format: arch-ive/YYMMNNN or arch-ive/YYMMNNN vN
     arxiv_pattern = r"^(\d{4}\.\d{4,5}|[a-z\-]+\/\d{7})(?:v\d+)?$"
 
     import re
 
     if re.match(arxiv_pattern, filename):
-        # 移除可能的版本號
+        # Remove potential version number
         clean_id = re.sub(r"v\d+$", "", filename)
-        logger.info(f"從檔案路徑提取到 arXiv ID: {clean_id}")
+        logger.info(f"Extracted arXiv ID from file path: {clean_id}")
         return clean_id
 
-    logger.warning(f"無法從檔案路徑 '{pdf_path}' 提取 arXiv ID")
+    logger.warning(f"Could not extract arXiv ID from file path: '{pdf_path}'")
     return None
 
 
 def get_pdf_url_from_arxiv_id(arxiv_id: str) -> Optional[str]:
     """
-    根據 arXiv ID 生成 PDF 下載網址。
+    Generate PDF download URL from an arXiv ID.
+
+    Creates a standard arXiv PDF URL from the provided ID,
+    removing any version numbers if present.
 
     Args:
-        arxiv_id: arXiv 論文 ID
+        arxiv_id: arXiv paper ID
 
     Returns:
-        PDF 下載網址或 None（如果輸入不合法）
+        str or None: PDF download URL, or None if the input is invalid
     """
     if not arxiv_id:
         return None
 
-    # 清理 ID，去除可能的版本號
+    # Clean the ID by removing potential version numbers
     import re
-
     clean_id = re.sub(r"v\d+$", "", arxiv_id.strip())
 
-    # 構建 PDF URL
+    # Construct PDF URL
     pdf_url = f"https://arxiv.org/pdf/{clean_id}.pdf"
-    logger.info(f"根據 arXiv ID 構建 PDF URL: {pdf_url}")
+    logger.info(f"Generated PDF URL from arXiv ID: {pdf_url}")
     return pdf_url
 
 
 def use_mistral_ocr_api_with_url(pdf_url: str, api_key: str) -> Dict[str, Any]:
     """
-    使用 Mistral OCR API 和 PDF URL 直接獲取文字內容。
+    Use Mistral OCR API with a PDF URL to directly extract text content.
+
+    This method is preferred when an arXiv ID is available, as it avoids
+    downloading the PDF file locally before processing.
 
     Args:
-        pdf_url: PDF 檔案的 URL
-        api_key: Mistral API 金鑰
+        pdf_url: URL of the PDF file
+        api_key: Mistral API key
 
     Returns:
-        包含文字內容或錯誤訊息的字典
+        Dict containing either extracted text content or error message
     """
-    logger.info(f"使用 Mistral OCR API 處理 PDF URL: {pdf_url}")
+    logger.info(f"Processing PDF URL with Mistral OCR API: {pdf_url}")
 
     try:
-        # 準備API請求
+        # Prepare API request
         api_url = "https://api.mistral.ai/v1/ocr"
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
 
-        # 準備請求主體
+        # Prepare request payload
         payload = {"model": "mistral-ocr-latest", "document": {"type": "document_url", "document_url": pdf_url}}
 
-        # 發送請求
-        logger.info("發送 PDF URL 到 Mistral OCR API")
-        with httpx.Client(timeout=120.0) as client:  # 延長超時時間，PDF處理可能需要時間
+        # Send request
+        logger.info("Sending PDF URL to Mistral OCR API")
+        with httpx.Client(timeout=120.0) as client:  # Extended timeout for PDF processing
             response = client.post(api_url, headers=headers, json=payload)
 
             if response.status_code != 200:
-                error_msg = f"Mistral OCR API 返回錯誤狀態碼: {response.status_code}, 內容: {response.text}"
+                error_msg = f"Mistral OCR API returned error status: {response.status_code}, content: {response.text}"
                 logger.error(error_msg)
                 return {"error": error_msg}
 
-            # 解析返回結果
+            # Parse response
             try:
                 result = response.json()
-                logger.debug(f"Mistral OCR API 回應: {json.dumps(result)[:500]}...")  # 只記錄前500個字元避免日誌過大
+                logger.debug(f"Mistral OCR API response: {json.dumps(result)[:500]}...")  # Log only first 500 chars to avoid excessive logging
 
-                # 提取 Markdown 內容
+                # Extract Markdown content
                 markdown_content = extract_markdown_from_ocr_response(result)
                 if markdown_content:
-                    logger.info(f"Mistral OCR API 成功處理 PDF URL，提取了 {len(markdown_content)} 個字元")
+                    logger.info(f"Mistral OCR API successfully processed PDF URL, extracted {len(markdown_content)} characters")
                     return {"text": markdown_content, "characters": len(markdown_content), "api": "mistral_ocr_api_url", "url": pdf_url}
                 else:
-                    logger.warning("Mistral OCR API 回應中沒有可提取的 Markdown 內容")
-                    return {"error": "無法從 Mistral OCR API 回應中提取 Markdown 內容"}
+                    logger.warning("No extractable Markdown content in Mistral OCR API response")
+                    return {"error": "Could not extract Markdown content from Mistral OCR API response"}
 
             except Exception as e:
-                error_msg = f"解析 Mistral OCR API 回應時出錯: {str(e)}"
+                error_msg = f"Error parsing Mistral OCR API response: {str(e)}"
                 logger.error(error_msg)
                 return {"error": error_msg}
 
     except Exception as e:
-        error_msg = f"使用 Mistral OCR API 處理 PDF URL 時發生錯誤: {str(e)}"
+        error_msg = f"Error processing PDF URL with Mistral OCR API: {str(e)}"
         logger.error(error_msg)
         return {"error": error_msg}
 
 
 def extract_markdown_from_ocr_response(response: Dict[str, Any]) -> str:
     """
-    從 Mistral OCR API 回應中提取 Markdown 內容。
+    Extract Markdown content from Mistral OCR API response.
+
+    Processes the API response structure to extract and combine Markdown content
+    from all pages, maintaining correct page order.
 
     Args:
-        response: Mistral OCR API 的回應
+        response: Mistral OCR API response object
 
     Returns:
-        合併的 Markdown 文本
+        str: Combined Markdown text from all pages
     """
-    # 檢查是否包含頁面內容
+    # Check if response contains page content
     if "pages" not in response:
-        logger.warning("Mistral OCR API 回應中沒有 'pages' 欄位")
+        logger.warning("No 'pages' field in Mistral OCR API response")
         return ""
 
     pages = response["pages"]
     if not pages or not isinstance(pages, list):
-        logger.warning("Mistral OCR API 回應中 'pages' 欄位不是有效的列表")
+        logger.warning("'pages' field in Mistral OCR API response is not a valid list")
         return ""
 
-    # 提取並合併所有頁面的 Markdown 內容
+    # Extract and combine Markdown content from all pages
     markdown_contents = []
 
     for page in pages:
@@ -159,10 +173,10 @@ def extract_markdown_from_ocr_response(response: Dict[str, Any]) -> str:
             page_index = page.get("index", len(markdown_contents))
             markdown_contents.append((page_index, page["markdown"]))
 
-    # 按頁碼排序
+    # Sort by page number
     markdown_contents.sort(key=lambda x: x[0])
 
-    # 合併 Markdown 內容
+    # Combine Markdown content
     combined_markdown = "\n\n".join([content for _, content in markdown_contents])
 
     return combined_markdown
@@ -170,202 +184,213 @@ def extract_markdown_from_ocr_response(response: Dict[str, Any]) -> str:
 
 def use_mistral_ocr_api_with_file(pdf_path: str, api_key: str) -> Dict[str, Any]:
     """
-    使用 Mistral OCR API 將本地 PDF 檔案轉換為文字，如果沒有可用的 arXiv ID。
+    Use Mistral OCR API to convert a local PDF file to text.
+
+    This method is used when no arXiv ID is available or when URL-based processing
+    is not possible. It encodes the PDF file as base64 and sends it to the API.
 
     Args:
-        pdf_path: PDF 檔案的路徑
-        api_key: Mistral API 金鑰
+        pdf_path: Path to the PDF file
+        api_key: Mistral API key
 
     Returns:
-        包含文字內容或錯誤訊息的字典
+        Dict containing either extracted text content or error message
     """
-    logger.info(f"使用 Mistral OCR API 處理本地 PDF 檔案: {pdf_path}")
+    logger.info(f"Processing local PDF file with Mistral OCR API: {pdf_path}")
 
     try:
         pdf_file = Path(pdf_path)
         if not pdf_file.exists():
-            error_msg = f"PDF 檔案不存在: {pdf_path}"
+            error_msg = f"PDF file does not exist: {pdf_path}"
             logger.error(error_msg)
             return {"error": error_msg}
 
-        # 檢查檔案大小
+        # Check file size
         file_size = pdf_file.stat().st_size
-        max_size = 20 * 1024 * 1024  # 20MB (根據 Mistral 限制)
+        max_size = 20 * 1024 * 1024  # 20MB (Mistral API limit)
 
         if file_size > max_size:
-            error_msg = f"PDF 檔案大小 ({file_size/1024/1024:.2f} MB) 超過 Mistral API 的 20 MB 限制"
+            error_msg = f"PDF file size ({file_size/1024/1024:.2f} MB) exceeds Mistral API's 20 MB limit"
             logger.error(error_msg)
             return {"error": error_msg}
 
-        # 準備API請求
+        # Prepare API request
         api_url = "https://api.mistral.ai/v1/ocr"
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
 
-        # 讀取檔案並將其轉換為 base64
+        # Read file and convert to base64
         with open(pdf_file, "rb") as file:
             pdf_base64 = base64.b64encode(file.read()).decode("utf-8")
 
-        # 準備請求主體
+        # Prepare request payload
         payload = {"model": "mistral-ocr-latest", "document": {"type": "base64", "base64": pdf_base64}}
 
-        # 發送請求
-        logger.info("發送 PDF base64 內容到 Mistral OCR API")
-        with httpx.Client(timeout=90.0) as client:  # 延長超時時間，PDF處理可能需要時間
+        # Send request
+        logger.info("Sending PDF base64 content to Mistral OCR API")
+        with httpx.Client(timeout=90.0) as client:  # Extended timeout for PDF processing
             response = client.post(api_url, headers=headers, json=payload)
 
             if response.status_code != 200:
-                error_msg = f"Mistral OCR API 返回錯誤狀態碼: {response.status_code}, 內容: {response.text}"
+                error_msg = f"Mistral OCR API returned error status: {response.status_code}, content: {response.text}"
                 logger.error(error_msg)
                 return {"error": error_msg}
 
-            # 解析返回結果
+            # Parse response
             try:
                 result = response.json()
-                logger.debug(f"Mistral OCR API 回應: {json.dumps(result)[:500]}...")  # 只記錄前500個字元避免日誌過大
+                logger.debug(f"Mistral OCR API response: {json.dumps(result)[:500]}...")  # Log only first 500 chars
 
-                # 提取 Markdown 內容
+                # Extract Markdown content
                 markdown_content = extract_markdown_from_ocr_response(result)
                 if markdown_content:
-                    logger.info(f"Mistral OCR API 成功處理 PDF 檔案，提取了 {len(markdown_content)} 個字元")
+                    logger.info(f"Mistral OCR API successfully processed PDF file, extracted {len(markdown_content)} characters")
                     return {"text": markdown_content, "characters": len(markdown_content), "api": "mistral_ocr_api_file"}
                 else:
-                    logger.warning("Mistral OCR API 回應中沒有可提取的 Markdown 內容")
-                    return {"error": "無法從 Mistral OCR API 回應中提取 Markdown 內容"}
+                    logger.warning("No extractable Markdown content in Mistral OCR API response")
+                    return {"error": "Could not extract Markdown content from Mistral OCR API response"}
 
             except Exception as e:
-                error_msg = f"解析 Mistral OCR API 回應時出錯: {str(e)}"
+                error_msg = f"Error parsing Mistral OCR API response: {str(e)}"
                 logger.error(error_msg)
                 return {"error": error_msg}
 
     except Exception as e:
-        error_msg = f"使用 Mistral OCR API 處理 PDF 檔案時發生錯誤: {str(e)}"
+        error_msg = f"Error processing PDF file with Mistral OCR API: {str(e)}"
         logger.error(error_msg)
         return {"error": error_msg}
 
 
 def use_pypdf2(pdf_path: str) -> Dict[str, Any]:
     """
-    使用 PyPDF2 將 PDF 檔案轉換為文字。
+    Convert PDF file to text using PyPDF2 library.
+
+    This method is used as a fallback when Mistral OCR API is not available or fails.
+    It performs basic LaTeX formula conversion to Markdown format.
 
     Args:
-        pdf_path: PDF 檔案的路徑
+        pdf_path: Path to the PDF file
 
     Returns:
-        包含文字內容或錯誤訊息的字典
+        Dict containing either extracted text content or error message
     """
-    logger.info(f"使用 PyPDF2 轉換 PDF 為文字: {pdf_path}")
+    logger.info(f"Converting PDF to text using PyPDF2: {pdf_path}")
 
     try:
-        # 檢查檔案是否存在
+        # Check if file exists
         pdf_file = Path(pdf_path)
         if not pdf_file.exists():
-            error_msg = f"PDF 檔案不存在: {pdf_path}"
+            error_msg = f"PDF file does not exist: {pdf_path}"
             logger.error(error_msg)
             return {"error": error_msg}
 
-        # 檢查檔案是否可讀
+        # Check if file is readable
         if not os.access(pdf_file, os.R_OK):
-            error_msg = f"PDF 檔案無法讀取: {pdf_path}"
+            error_msg = f"PDF file is not readable: {pdf_path}"
             logger.error(error_msg)
             return {"error": error_msg}
 
-        # 讀取 PDF 檔案
+        # Read PDF file
         reader = PdfReader(pdf_file)
         num_pages = len(reader.pages)
-        logger.info(f"PDF 檔案有 {num_pages} 頁")
+        logger.info(f"PDF file has {num_pages} pages")
 
-        # 轉換每一頁為文字
+        # Convert each page to text
         text_content = []
         for i, page in enumerate(reader.pages):
             try:
-                # 提取文字
+                # Extract text
                 page_text = page.extract_text()
                 if page_text:
-                    # 轉換可能的 LaTeX 公式為 Markdown 格式
-                    # 這裡進行一些簡單的處理，完整處理需要更複雜的解析器
-                    # 將常見的 LaTeX 表示法轉換為 Markdown 格式
+                    # Convert potential LaTeX formulas to Markdown format
+                    # This is a simple processing; full processing would require a more complex parser
+                    # Convert common LaTeX notation to Markdown format
                     page_text = page_text.replace("$$", "$")
 
-                    # 確保數學公式前後有空格，以便在 Markdown 中正確顯示
+                    # Ensure math formulas have spaces before and after for proper Markdown display
                     page_text = page_text.replace("$", " $ ")
 
-                    # 添加頁碼標記
-                    text_content.append(f"## 第 {i+1} 頁\n\n{page_text}\n")
+                    # Add page number marker
+                    text_content.append(f"## Page {i+1}\n\n{page_text}\n")
                 else:
-                    text_content.append(f"## 第 {i+1} 頁\n\n*[此頁沒有可提取的文字或僅包含圖像]*\n")
+                    text_content.append(f"## Page {i+1}\n\n*[This page has no extractable text or contains only images]*\n")
             except Exception as e:
-                logger.warning(f"處理第 {i+1} 頁時出錯: {e}")
-                text_content.append(f"## 第 {i+1} 頁\n\n*[處理此頁時出錯: {str(e)}]*\n")
+                logger.warning(f"Error processing page {i+1}: {e}")
+                text_content.append(f"## Page {i+1}\n\n*[Error processing this page: {str(e)}]*\n")
 
-        # 組合所有頁面內容
+        # Combine all page contents
         full_text = "\n".join(text_content)
 
-        logger.info(f"成功轉換 PDF 為文字，共 {len(full_text)} 字元")
+        logger.info(f"Successfully converted PDF to text, {len(full_text)} characters total")
         return {"text": full_text, "pages": num_pages, "characters": len(full_text), "api": "pypdf2"}
 
     except Exception as e:
-        error_msg = f"處理 PDF 檔案時發生錯誤: {str(e)}"
+        error_msg = f"Error processing PDF file: {str(e)}"
         logger.error(error_msg)
         return {"error": error_msg}
 
 
 def pdf_to_text(pdf_path: str) -> Dict[str, Any]:
     """
-    將 PDF 檔案轉換為文字。
+    Convert PDF file to text with intelligent processing selection.
 
-    如果環境變數 MISTRAL_OCR_API_KEY 存在：
-    1. 嘗試從檔案路徑提取 arXiv ID
-    2. 如果有 arXiv ID，使用 PDF URL 和 Mistral OCR API
-    3. 否則使用本地檔案和 Mistral OCR API
+    This function selects the optimal method for PDF text extraction based on available resources:
+    
+    If MISTRAL_OCR_API_KEY environment variable exists:
+    1. Try to extract arXiv ID from the file path
+    2. If arXiv ID is available, use PDF URL with Mistral OCR API
+    3. Otherwise, use local file with Mistral OCR API
 
-    如果環境變數不存在，使用 PyPDF2 進行本地處理。
+    If environment variable is not set, use PyPDF2 for local processing.
+    
+    The function includes fallback mechanisms to ensure text extraction even if
+    preferred methods fail.
 
     Args:
-        pdf_path: PDF 檔案的路徑
+        pdf_path: Path to the PDF file
 
     Returns:
-        包含文字內容或錯誤訊息的字典
+        Dict containing either extracted text content or error message
     """
-    logger.info(f"收到 PDF 轉換文字請求: {pdf_path}")
+    logger.info(f"Received PDF to text conversion request: {pdf_path}")
 
-    # 檢查是否有 Mistral API 金鑰
+    # Check if Mistral API key is available
     mistral_api_key = os.environ.get("MISTRAL_OCR_API_KEY")
 
     if mistral_api_key:
-        logger.info("找到 MISTRAL_OCR_API_KEY 環境變數，將使用 Mistral OCR API")
+        logger.info("Found MISTRAL_OCR_API_KEY environment variable, will use Mistral OCR API")
 
-        # 嘗試從檔案路徑提取 arXiv ID
+        # Try to extract arXiv ID from file path
         arxiv_id = extract_arxiv_id_from_path(pdf_path)
 
         if arxiv_id:
-            # 根據 arXiv ID 生成 PDF URL
+            # Generate PDF URL from arXiv ID
             pdf_url = get_pdf_url_from_arxiv_id(arxiv_id)
 
             if pdf_url:
-                # 使用 PDF URL 和 Mistral OCR API
-                logger.info(f"使用 arXiv PDF URL 和 Mistral OCR API: {pdf_url}")
+                # Use PDF URL with Mistral OCR API
+                logger.info(f"Using arXiv PDF URL with Mistral OCR API: {pdf_url}")
                 result = use_mistral_ocr_api_with_url(pdf_url, mistral_api_key)
             else:
-                # 如果無法生成 PDF URL，使用本地檔案
-                logger.warning(f"無法從 arXiv ID 生成 PDF URL，使用本地檔案")
+                # If PDF URL generation fails, use local file
+                logger.warning(f"Could not generate PDF URL from arXiv ID, using local file")
                 result = use_mistral_ocr_api_with_file(pdf_path, mistral_api_key)
         else:
-            # 如果無法提取 arXiv ID，使用本地檔案
-            logger.info("無法從檔案路徑提取 arXiv ID，使用本地檔案和 Mistral OCR API")
+            # If arXiv ID extraction fails, use local file
+            logger.info("Could not extract arXiv ID from file path, using local file with Mistral OCR API")
             result = use_mistral_ocr_api_with_file(pdf_path, mistral_api_key)
 
-        # 如果 Mistral API 處理失敗，則嘗試 PyPDF2 作為備選
+        # If Mistral API processing fails, try PyPDF2 as fallback
         if "error" in result:
-            logger.warning(f"Mistral OCR API 處理失敗: {result['error']}，嘗試使用 PyPDF2 作為備選")
+            logger.warning(f"Mistral OCR API processing failed: {result['error']}, trying PyPDF2 as fallback")
             fallback_result = use_pypdf2(pdf_path)
 
-            # 在備選結果中添加訊息說明
+            # Add note to fallback result
             if "error" not in fallback_result:
-                fallback_result["note"] = "Mistral OCR API 處理失敗，使用 PyPDF2 作為備選方法處理"
+                fallback_result["note"] = "Mistral OCR API processing failed, used PyPDF2 as fallback method"
 
             return fallback_result
 
         return result
     else:
-        logger.info("未找到 MISTRAL_OCR_API_KEY 環境變數，使用 PyPDF2 進行本地處理")
+        logger.info("MISTRAL_OCR_API_KEY environment variable not found, using PyPDF2 for local processing")
         return use_pypdf2(pdf_path)

@@ -1,27 +1,27 @@
 #!/bin/bash
 
-# 容器名稱
+# Container name
 CONTAINER_NAME="dev_mcp-arxiv-query"
 
-echo "準備運行開發環境容器: $CONTAINER_NAME"
+echo "Preparing to run development environment container: $CONTAINER_NAME"
 
-# 檢查並停止現有容器（如果存在）
+# Check and stop existing container (if it exists)
 if docker ps -a | grep -q $CONTAINER_NAME; then
-  echo "* 發現現有容器，正在停止並移除..."
+  echo "* Found existing container, stopping and removing..."
   docker stop $CONTAINER_NAME > /dev/null 2>&1
   docker rm $CONTAINER_NAME > /dev/null 2>&1
-  echo "  現有容器已移除。"
+  echo "  Existing container has been removed."
 fi
 
-# 獲取當前目錄的絕對路徑
+# Get absolute path of current directory
 CURRENT_DIR=$(pwd)
 
-echo "* 啟動新容器..."
-# 啟動新容器
+echo "* Starting new container..."
+# Start new container, using tail -f /dev/null to keep the container running
 docker run -d --name $CONTAINER_NAME \
   --volume $HOME/Downloads:/app/Downloads \
   --volume $CURRENT_DIR:/app \
   dev_mcp-arxiv-query \
-  /bin/bash
+  tail -f /dev/null
 
-echo "* 容器已退出。"
+echo "* Container successfully started and running in the background."

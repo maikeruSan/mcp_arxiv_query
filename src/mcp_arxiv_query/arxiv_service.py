@@ -1,7 +1,19 @@
 """
 ArXiv Query Service
+==================
 
-Primary service for searching and downloading arXiv papers.
+Primary service module for searching, downloading, and managing arXiv papers.
+
+This module provides a comprehensive interface to the arXiv API through the
+arxiv_query_fluent library. It handles paper searches with various criteria,
+download management, rate limiting, and error handling.
+
+Classes:
+    ArxivQueryService: Main service class for interacting with arXiv API
+
+Dependencies:
+    - arxiv_query_fluent: For querying the arXiv API
+    - rate_limiter: For managing API rate limits and preventing abuse
 """
 
 import os
@@ -24,11 +36,25 @@ from arxiv import SortCriterion, SortOrder  # type: ignore
 from mcp_arxiv_query.logger import setup_logging
 from mcp_arxiv_query.rate_limiter import RateLimiter
 
+# Initialize module logger
 logger = setup_logging()
 
 
 class ArxivQueryService:
-    """ArXiv Query Service that wraps arxiv_query_fluent.Query for searching arXiv papers."""
+    """
+    ArXiv Query Service that provides comprehensive access to the arXiv repository.
+    
+    This class wraps the arxiv_query_fluent.Query API for searching and downloading
+    papers from arXiv. It supports various search criteria, automatic retries, 
+    rate limiting, and caching of downloaded papers.
+    
+    Attributes:
+        download_dir (Path): Directory where PDF files will be downloaded and cached
+        rate_limiter (RateLimiter): Rate limiting service to prevent API abuse
+        max_api_retries (int): Maximum number of API call retries on failure
+        api_retry_delay (float): Initial delay in seconds between retry attempts
+        use_exponential_backoff (bool): Whether to increase delay exponentially on retries
+    """
 
     def __init__(self, download_dir: str):
         """
@@ -37,11 +63,12 @@ class ArxivQueryService:
         Args:
             download_dir: Directory where PDF files will be downloaded
         """
+        # Ensure download directory exists and is an absolute path
         self.download_dir = Path(download_dir).expanduser().resolve()
         self.download_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"PDF download directory (resolved): {self.download_dir}")
 
-        # Initialize rate limiter
+        # Initialize rate limiter with configuration from environment variables
         # Get values from environment or use defaults
         max_calls_per_minute = int(os.environ.get("ARXIV_MAX_CALLS_PER_MINUTE", "30"))
         max_calls_per_day = int(os.environ.get("ARXIV_MAX_CALLS_PER_DAY", "2000"))
@@ -52,8 +79,11 @@ class ArxivQueryService:
         self.api_retry_delay = float(os.environ.get("ARXIV_RETRY_DELAY_SECONDS", "2.0"))
         self.use_exponential_backoff = os.environ.get("ARXIV_USE_EXPONENTIAL_BACKOFF", "True").lower() == "true"
 
+        # Create rate limiter instance with configured parameters
         self.rate_limiter = RateLimiter(
-            max_calls_per_minute=max_calls_per_minute, max_calls_per_day=max_calls_per_day, min_interval_seconds=min_interval_seconds
+            max_calls_per_minute=max_calls_per_minute, 
+            max_calls_per_day=max_calls_per_day, 
+            min_interval_seconds=min_interval_seconds
         )
 
     def _execute_arxiv_query(
@@ -67,26 +97,29 @@ class ArxivQueryService:
         exponential_backoff: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         """
-        執行 arXiv 查詢的內部方法，處理共同的查詢邏輯，並支援自動重試。
+        Internal method to execute arXiv queries with common logic and automatic retries.
+
+        This method handles the creation of Query objects, execution of API requests,
+        processing of results, and implements retry logic with backoff for resilience.
 
         Args:
-            query_params: 查詢參數列表，每個參數是 (field, value, operator) 的元組
-            max_results: 最大返回結果數
-            sort_by: 排序標準 ("relevance", "lastUpdatedDate", or "submittedDate")
-            sort_order: 排序順序 ("ascending" or "descending")
-            max_retries: 最大重試次數，若未指定則使用實例默認值
-            retry_delay: 初始重試延遲（秒），若未指定則使用實例默認值
-            exponential_backoff: 是否使用指數退避策略，若未指定則使用實例默認值
+            query_params: List of query parameters, each a tuple of (field, value, operator)
+            max_results: Maximum number of results to return
+            sort_by: Sort criterion ("relevance", "lastUpdatedDate", or "submittedDate")
+            sort_order: Sort order ("ascending" or "descending")
+            max_retries: Maximum number of retry attempts if unspecified uses class default
+            retry_delay: Initial retry delay in seconds, if unspecified uses class default
+            exponential_backoff: Whether to use exponential backoff for retries
 
         Returns:
-            論文元數據列表，包含標題、作者和摘要
+            List of paper metadata dictionaries containing title, authors, and abstract
         """
-        # 使用參數提供的值或默認值
+        # Use provided values or instance defaults
         max_retries = max_retries if max_retries is not None else self.max_api_retries
         retry_delay = retry_delay if retry_delay is not None else self.api_retry_delay
         exponential_backoff = exponential_backoff if exponential_backoff is not None else self.use_exponential_backoff
 
-        # 應用速率限制
+        # Apply rate limiting to avoid exceeding arXiv API limits
         self.rate_limiter.wait_if_needed()
 
         retries = 0
@@ -95,7 +128,7 @@ class ArxivQueryService:
 
         while retries <= max_retries:
             try:
-                # 將字符串參數映射到枚舉值
+                # Map string parameters to enum values for the arXiv API
                 sort_criterion_map = {
                     "relevance": "Relevance",
                     "lastUpdatedDate": "LastUpdatedDate",
@@ -106,34 +139,35 @@ class ArxivQueryService:
                     "descending": "Descending",
                 }
 
+                # Convert string parameters to enum values
                 sort_criterion = getattr(SortCriterion, sort_criterion_map.get(sort_by, "SubmittedDate"))
                 sort_order = getattr(SortOrder, sort_order_map.get(sort_order, "Descending"))
 
-                # 創建查詢對象
+                # Create query object with sort settings
                 arxiv_query = Query(
                     max_entries_per_pager=max_results,
                     sortBy=sort_criterion,
                     sortOrder=sort_order,
                 )
 
-                # 添加查詢條件
+                # Add all query conditions
                 for i, (field, value, operator) in enumerate(query_params):
-                    # 第一個條件不需要運算符
+                    # First condition doesn't need an operator
                     add_operator = None if i == 0 else operator
                     arxiv_query.add(field, value, add_operator)
 
-                # 記錄查詢設定
+                # Log the query for debugging
                 logger.debug(f"Executing arXiv query: {arxiv_query.search_query()}")
 
-                # 執行查詢
+                # Execute the query
                 results = arxiv_query.get()
 
-                # 檢查返回結果
+                # Check if results were found
                 if not results or not results.entrys:
                     logger.warning("No papers found with the specified criteria")
                     return [{"message": "No papers found with the specified criteria"}]
 
-                # 將結果轉換為字典列表
+                # Convert results to dictionary list
                 papers = []
                 for entry in results.entrys:
                     papers.append(
@@ -159,25 +193,25 @@ class ArxivQueryService:
                 retries += 1
                 last_error = e
 
-                # 如果已達到最大重試次數，則拋出最後一個錯誤
+                # If we've reached max retries, return error
                 if retries > max_retries:
                     logger.error(f"Error executing arXiv query after {max_retries} retries: {e}")
                     return [{"error": f"Error searching arXiv after {max_retries} retries: {str(e)}"}]
 
-                # 記錄錯誤並準備重試
+                # Log error and prepare to retry
                 logger.warning(f"Error executing arXiv query (attempt {retries}/{max_retries}): {e}, retrying in {current_delay} seconds...")
 
-                # 等待一段時間後重試
+                # Wait before retrying
                 time.sleep(current_delay)
 
-                # 如果使用指數退避策略，則增加等待時間
+                # Increase wait time if using exponential backoff
                 if exponential_backoff:
                     current_delay *= 2
 
-                # 再次應用速率限制（可選，視情況而定）
+                # Re-apply rate limiting (optional, situation dependent)
                 self.rate_limiter.wait_if_needed()
 
-        # 這行代碼理論上不會執行到，但為了滿足 mypy 類型檢查需要添加
+        # This line should never execute, but is needed for mypy type checking
         return [{"error": "Unexpected error: All retries failed but didn't return"}]
 
     def search_arxiv(
@@ -193,33 +227,36 @@ class ArxivQueryService:
         sort_order: str = "descending",
     ) -> List[Dict[str, Any]]:
         """
-        搜索 arXiv 論文，支持多種搜索條件的組合。
+        Search arXiv papers with support for multiple search criteria combinations.
+
+        This method provides a flexible interface for searching arXiv papers using
+        various criteria. If a full query string is provided, it will be used directly.
+        Otherwise, individual search parameters will be combined to form the query.
 
         Args:
-            query: 完整的 arXiv 查詢語句 (可選，如果提供其他具體條件會被忽略)
-            category: arXiv 類別 (例如: 'cs.AI')
-            title: 論文標題中的關鍵詞
-            author: 作者名稱
-            abstract: 摘要中的關鍵詞
-            id: arXiv 論文 ID
-            max_results: 最大返回結果數
-            sort_by: 排序標準 ("relevance", "lastUpdatedDate", "submittedDate")
-            sort_order: 排序順序 ("ascending", "descending")
+            query: Complete arXiv query string (optional, if provided other criteria are ignored)
+            category: arXiv category (e.g., 'cs.AI')
+            title: Keywords to search in paper titles
+            author: Author name to search for
+            abstract: Keywords to search in paper abstracts
+            id: arXiv paper ID
+            max_results: Maximum number of results to return
+            sort_by: Sort criterion ("relevance", "lastUpdatedDate", "submittedDate")
+            sort_order: Sort order ("ascending", "descending")
 
         Returns:
-            論文元數據列表，包含標題、作者和摘要
+            List of paper metadata dictionaries containing title, authors, and abstract
         """
         logger.debug(f"Searching arXiv with conditions: {locals()}")
 
-        # 如果提供了完整查詢字符串，直接使用它
+        # If a complete query string is provided, use it directly
         if query:
             retries = 0
             current_delay = self.api_retry_delay
 
             while retries <= self.max_api_retries:
                 try:
-                    # 使用 http_get 方法直接執行查詢
-                    # 將字符串參數映射到枚舉值
+                    # Map string parameters to enum values
                     sort_criterion_map = {
                         "relevance": "Relevance",
                         "lastUpdatedDate": "LastUpdatedDate",
@@ -230,9 +267,10 @@ class ArxivQueryService:
                         "descending": "Descending",
                     }
 
-                    # 應用速率限制
+                    # Apply rate limiting
                     self.rate_limiter.wait_if_needed()
 
+                    # Use http_get method to execute the query directly
                     results = Query.http_get(
                         base_url="http://export.arxiv.org/api/query?",
                         search_query=query,
@@ -241,7 +279,7 @@ class ArxivQueryService:
                         sortOrder=getattr(SortOrder, sort_order_map.get(sort_order, "Descending")),
                     )
 
-                    # 轉換結果
+                    # Convert results to dictionary list
                     papers = []
                     for entry in results.entrys:
                         papers.append(
@@ -266,31 +304,31 @@ class ArxivQueryService:
                 except Exception as e:
                     retries += 1
 
-                    # 如果已達到最大重試次數，則拋出最後一個錯誤
+                    # If we've reached max retries, return error
                     if retries > self.max_api_retries:
                         logger.error(f"Error searching with query string after {self.max_api_retries} retries: {e}")
                         return [{"error": f"Error searching arXiv: {str(e)}"}]
 
-                    # 記錄錯誤並準備重試
+                    # Log error and prepare to retry
                     logger.warning(f"Error searching with query string (attempt {retries}/{self.max_api_retries}): {e}, retrying in {current_delay} seconds...")
 
-                    # 等待一段時間後重試
+                    # Wait before retrying
                     time.sleep(current_delay)
 
-                    # 如果使用指數退避策略，則增加等待時間
+                    # Increase wait time if using exponential backoff
                     if self.use_exponential_backoff:
                         current_delay *= 2
 
-        # 否則，根據提供的個別條件構建查詢
+        # Otherwise, build query from individual conditions
         query_params = []
 
-        # 處理 ID 查詢
+        # Handle ID query specially
         if id:
             clean_id = self.clean_paper_id(id)
             query_params.append((Field.id, clean_id, None))
             return self._execute_arxiv_query(query_params, max_results, sort_by, sort_order)
 
-        # 處理其他查詢條件
+        # Process other query conditions
         if category:
             query_params.append((Field.category, category, None))
 
@@ -306,7 +344,7 @@ class ArxivQueryService:
             operator = None if not query_params else Opt.And
             query_params.append((Field.abstract, abstract, operator))
 
-        # 如果沒有提供任何條件，返回錯誤
+        # Return error if no conditions provided
         if not query_params:
             logger.warning("No search criteria provided")
             return [{"error": "No search criteria provided. Please specify at least one search parameter."}]
@@ -326,35 +364,38 @@ class ArxivQueryService:
         sort_order: str = "descending",
     ) -> List[Dict[str, Any]]:
         """
-        搜尋特定日期範圍內提交的論文，可使用多種篩選條件進行進階搜尋。
+        Search for papers submitted within a specific date range with optional filtering criteria.
+
+        This method allows searching for papers submitted within a date range and provides
+        additional filtering options like category, title keywords, author, and abstract keywords.
 
         Args:
-            start_date: 開始日期，格式為 YYYY-MM-DD
-            end_date: 結束日期，格式為 YYYY-MM-DD
-            category: 可選的 arXiv 類別
-            title: 搜尋標題中的關鍵詞
-            author: 搜尋特定作者
-            abstract: 搜尋摘要中的關鍵詞
-            max_results: 最大返回結果數
-            sort_by: 排序標準 ("relevance", "lastUpdatedDate", or "submittedDate")
-            sort_order: 排序順序 ("ascending" or "descending")
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+            category: Optional arXiv category
+            title: Optional keywords to search in paper titles
+            author: Optional author name to search for
+            abstract: Optional keywords to search in paper abstracts
+            max_results: Maximum number of results to return
+            sort_by: Sort criterion ("relevance", "lastUpdatedDate", or "submittedDate")
+            sort_order: Sort order ("ascending" or "descending")
 
         Returns:
-            論文元數據列表，包含標題、作者和摘要
+            List of paper metadata dictionaries containing title, authors, and abstract
         """
         logger.debug(f"Searching arXiv for papers between {start_date} and {end_date}")
 
-        # 轉換日期格式，從 YYYY-MM-DD 到 YYYYMMDD
-        # DateRange 類別要求日期格式為 YYYYMMDD 或 YYYYMMDDHHMM
+        # Convert date format from YYYY-MM-DD to YYYYMMDD
+        # DateRange class requires dates in YYYYMMDD or YYYYMMDDHHMM format
         try:
             start_date_formatted = start_date.replace("-", "")
             end_date_formatted = end_date.replace("-", "")
 
-            # 檢查格式化後的日期是否為 8 位數字
+            # Check if formatted dates are 8 digits
             if not (len(start_date_formatted) == 8 and len(end_date_formatted) == 8):
                 raise ValueError("Date format incorrect")
 
-            # 偵測格式化後的時間是否為數字
+            # Verify formatted dates are numeric
             int(start_date_formatted)
             int(end_date_formatted)
 
@@ -363,14 +404,14 @@ class ArxivQueryService:
             logger.error(error_msg)
             return [{"error": error_msg}]
 
-        # 構建查詢參數
+        # Build query parameters
         query_params = []
 
-        # 添加日期範圍條件
+        # Add date range condition
         date_range = DateRange(start_date_formatted, end_date_formatted)
         query_params.append((Field.submitted_date, date_range, None))
 
-        # 添加其他條件
+        # Add other conditions
         if category:
             query_params.append((Field.category, category, Opt.And))
 
@@ -383,7 +424,7 @@ class ArxivQueryService:
         if abstract:
             query_params.append((Field.abstract, abstract, Opt.And))
 
-        # 執行查詢
+        # Execute query
         return self._execute_arxiv_query(query_params, max_results, sort_by, sort_order)
 
     def search_by_category(
@@ -396,7 +437,10 @@ class ArxivQueryService:
         end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Search arXiv papers by category.
+        Search arXiv papers by category with optional date filtering.
+
+        This method provides a convenient way to search for papers in a specific
+        category, with optional date range filtering.
 
         Args:
             category: ArXiv category (e.g., "cs.AI", "physics.optics")
@@ -447,7 +491,10 @@ class ArxivQueryService:
         end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Search arXiv papers by author name.
+        Search arXiv papers by author name with optional date filtering.
+
+        This method provides a convenient way to search for papers by a specific
+        author, with optional date range filtering.
 
         Args:
             author: Author name to search for
@@ -490,13 +537,15 @@ class ArxivQueryService:
 
     def search_by_id(self, paper_id: str) -> List[Dict[str, Any]]:
         """
-        搜尋指定 arXiv ID 的論文。
+        Search for a paper with a specific arXiv ID.
+
+        This method provides a convenient way to retrieve a specific paper by its ID.
 
         Args:
-            paper_id: arXiv 論文 ID (例如: '2503.13399' 或 '2503.13399v1')
+            paper_id: arXiv paper ID (e.g., '2503.13399' or '2503.13399v1')
 
         Returns:
-            論文元數據列表，包含標題、作者和摘要
+            List of paper metadata including title, authors, and abstract
         """
         return self.search_arxiv(id=paper_id)
 
@@ -504,6 +553,9 @@ class ArxivQueryService:
     def clean_paper_id(paper_id: str) -> str:
         """
         Clean an arXiv paper ID by removing version numbers and extracting the core ID.
+
+        This method handles various forms of arXiv IDs, including those with version 
+        numbers or embedded in URLs.
 
         Args:
             paper_id: ArXiv paper ID (potentially with version or as a URL)
@@ -533,6 +585,9 @@ class ArxivQueryService:
     ) -> Dict[str, Any]:
         """
         Download a paper by its arXiv ID, using the arXiv ID as filename.
+
+        This method handles downloading papers from arXiv, with support for caching,
+        automatic retries, and error handling.
 
         Args:
             paper_id: arXiv paper ID (e.g., "2301.00001")

@@ -1,6 +1,5 @@
 FROM python:3.12-slim
 
-# 安裝必要的工具，包括 Node.js 和 npm
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -10,21 +9,16 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 安裝依賴和專案
 RUN pip install --no-cache-dir "arxiv>=1.4.8" && \
     pip install --no-cache-dir arxiv-query-fluent && \
     pip install --no-cache-dir "mcp>=1.0.0" && \
     pip install --no-cache-dir "httpx>=0.24.0" && \
     pip install --no-cache-dir "PyPDF2>=3.0.0"
 
-# 安裝 uv - 使用 pip 方式安裝
 RUN pip install --no-cache-dir uv
 
-# 確保 uv 在 PATH 中
 RUN which uv
 
-# 設定環境變數
 ENV PYTHONUNBUFFERED=1
 
-# 暴露 MCP Inspector 使用的端口
 EXPOSE 3000 5173

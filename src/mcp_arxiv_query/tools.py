@@ -1,65 +1,118 @@
 """
-MCP Tool definitions for the ArXiv Query Service.
+MCP Tool Definitions for the ArXiv Query Service
+===============================================
 
-This module defines the available tools and their schemas for MCP integration.
+This module defines the available tools and their schemas for Model Context Protocol (MCP) integration.
+It provides a standardized interface for AI assistants to interact with the arXiv academic paper repository.
+
+The module exports tool definitions with comprehensive schemas that document available 
+parameters, data types, and expected formats for making API calls to arXiv.
 """
 
 import mcp.types as types
 from typing import List
+from arxiv_query_fluent import Category
 
 
 def get_tool_definitions() -> List[types.Tool]:
     """
     Get the list of available MCP tools with their schemas.
 
+    This function returns the complete set of tool definitions that can be used
+    by MCP-enabled AI assistants to search, download, and process arXiv papers.
+    Each tool includes a name, description, and input schema detailing the
+    required and optional parameters.
+
     Returns:
-        List of MCP Tool definitions
+        List[types.Tool]: List of MCP Tool definitions ready for registration with the MCP server
     """
     return [
         types.Tool(
             name="search_arxiv",
-            description="搜索 arXiv 論文，支持多種條件組合，如標題、作者、摘要、類別等",
+            description="Search arXiv papers using various criteria such as title, author, abstract, and category",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "完整的 arXiv 格式查詢字串（支持高級語法）。如果提供，其他條件將被忽略。",
+                        "description": """
+                        Complete arXiv query string supporting advanced syntax. If provided, other criteria are ignored.
+                
+                        ## arXiv Query Syntax Guide
+
+                        The arXiv API supports structured queries through the `search_query` parameter. Queries consist of three main components:
+
+                        1. **Search Fields**: Specify the type of information to search
+                            - `ti`: title
+                            - `au`: author
+                            - `abs`: abstract
+                            - `co`: comment
+                            - `jr`: journal reference
+                            - `cat`: category
+                            - `all`: all fields
+
+                        2. **Operators**: Connect multiple search conditions
+                            - `AND`: both conditions must be met
+                            - `OR`: either condition can be met
+                            - `ANDNOT`: exclude specific conditions
+
+                        3. **Special Characters**:
+                            - Parentheses `()`: encoded as `%28` and `%29`, used for grouping
+                            - Double quotes `""`: encoded as `%22`, used for exact phrase matching
+                            - Spaces: encoded as `+`
+
+                        ### Date Queries
+                            `submittedDate` limits the paper submission date range:
+                            - Format: `submittedDate:[YYYYMMDDHHMMSS TO YYYYMMDDHHMMSS]`
+                            - Wildcards can represent unlimited ranges: `submittedDate:[20170701* TO *]`
+
+                        ### Query Examples
+                            - `au:del_maestro AND ti:checkerboard`
+                            (Search for papers by author del maestro with checkerboard in the title)
+                            - `ti:"network analysis" AND cat:cs.SE`
+                            (Search for papers with "network analysis" in title and cs.SE category)
+                            - `au:au:Einstein AND submittedDate:[20000101 TO 20250101]`
+                            (Search for Einstein papers submitted between 20000101 and 20250101)
+                            - `all:(neuroscience OR brain) ANDNOT au:Smith`
+                            (Search for neuroscience or brain related papers in the all fields excluding author Smith)
+                            
+                    """,
                     },
                     "id": {
                         "type": "string",
-                        "description": "arXiv 論文 ID（例如：'2503.13399'）。如提供將忽略其他搜索條件。",
+                        "description": "arXiv paper ID (e.g., '2503.13399'). If provided, other search criteria will be ignored.",
                     },
                     "category": {
                         "type": "string",
-                        "description": "論文類別（例如：'cs.AI'，'physics.optics'）。請參考 arXiv 的官方類別代碼。",
+                        "enum": [c.value for c in Category],
+                        "description": "arXiv category code (e.g., 'cs.AI', 'stat.ME'). Search will be limited to papers in this category. See arXiv.org for the full list of category codes.",
                     },
                     "title": {
                         "type": "string",
-                        "description": "搜索標題中包含的關鍵詞。大小寫不敏感。",
+                        "description": "Keywords to search in paper titles. Case-insensitive.",
                     },
                     "author": {
                         "type": "string",
-                        "description": "搜索特定作者。建議使用姓氏，大小寫不敏感。",
+                        "description": "Author name to search for. Recommendation: use last name only for broader results. Case-insensitive.",
                     },
                     "abstract": {
                         "type": "string",
-                        "description": "搜索摘要中包含的關鍵詞。大小寫不敏感。",
+                        "description": "Keywords to search in paper abstracts. Case-insensitive.",
                     },
                     "max_results": {
                         "type": "integer",
-                        "description": "最大返回結果數",
+                        "description": "Maximum number of results to return",
                         "default": 10,
                     },
                     "sort_by": {
                         "type": "string",
-                        "description": "排序標準",
+                        "description": "Sorting criterion for results",
                         "enum": ["relevance", "lastUpdatedDate", "submittedDate"],
                         "default": "relevance",
                     },
                     "sort_order": {
                         "type": "string",
-                        "description": "排序順序",
+                        "description": "Sort order for results",
                         "enum": ["ascending", "descending"],
                         "default": "descending",
                     },
@@ -68,18 +121,18 @@ def get_tool_definitions() -> List[types.Tool]:
         ),
         types.Tool(
             name="download_paper",
-            description="下載 arXiv 論文 PDF 文件，檔名自動使用 arXiv Identifier",
+            description="Download an arXiv paper PDF file, using the arXiv ID as the filename",
             inputSchema={
                 "type": "object",
                 "required": ["paper_id"],
                 "properties": {
                     "paper_id": {
                         "type": "string",
-                        "description": "arXiv 論文 ID (例如：'2301.00001')",
+                        "description": "arXiv paper ID (e.g., '2301.00001')",
                     },
                     "force_refresh": {
                         "type": "boolean",
-                        "description": "強制重新下載，即使本地已有緩存 (默認: false)",
+                        "description": "Force download even if local copy exists (default: false)",
                         "default": False,
                     },
                 },
@@ -87,141 +140,142 @@ def get_tool_definitions() -> List[types.Tool]:
         ),
         types.Tool(
             name="search_by_category",
-            description="按類別搜索 arXiv 論文，可選擇指定日期範圍",
+            description="Search arXiv papers by category with optional date range filtering",
             inputSchema={
                 "type": "object",
                 "required": ["category"],
                 "properties": {
                     "category": {
                         "type": "string",
-                        "description": "ArXiv 類別 (例如：'cs.AI', 'physics.optics', 'math.NT')。請參考 arXiv 的官方類別代碼。",
+                        "description": "arXiv category code (e.g., 'cs.AI', 'physics.optics', 'math.NT'). Refer to arXiv's official category codes.",
                     },
                     "max_results": {
                         "type": "integer",
-                        "description": "最大返回結果數",
+                        "description": "Maximum number of results to return",
                         "default": 10,
                     },
                     "sort_by": {
                         "type": "string",
-                        "description": "排序標準",
+                        "description": "Sorting criterion for results",
                         "enum": ["relevance", "lastUpdatedDate", "submittedDate"],
                         "default": "submittedDate",
                     },
                     "sort_order": {
                         "type": "string",
-                        "description": "排序順序",
+                        "description": "Sort order for results",
                         "enum": ["ascending", "descending"],
                         "default": "descending",
                     },
                     "start_date": {
                         "type": "string",
-                        "description": "開始日期，格式為 YYYY-MM-DD (例如：'2024-01-01')。若提供此參數，也必須提供 end_date。",
+                        "description": "Start date in YYYY-MM-DD format (e.g., '2024-01-01'). If provided, end_date must also be provided.",
                     },
                     "end_date": {
                         "type": "string",
-                        "description": "結束日期，格式為 YYYY-MM-DD (例如：'2024-06-30')。必須大於或等於 start_date。",
+                        "description": "End date in YYYY-MM-DD format (e.g., '2024-06-30'). Must be greater than or equal to start_date.",
                     },
                 },
             },
         ),
         types.Tool(
             name="search_by_author",
-            description="搜索特定作者的 arXiv 論文，可選擇指定日期範圍",
+            description="Search for papers by a specific author with optional date range filtering",
             inputSchema={
                 "type": "object",
                 "required": ["author"],
                 "properties": {
                     "author": {
                         "type": "string",
-                        "description": "作者名稱。建議僅使用姓氏，大小寫不敏感。",
+                        "description": "Author name to search for. Recommendation: use last name only for broader results. Case-insensitive.",
                     },
                     "max_results": {
                         "type": "integer",
-                        "description": "最大返回結果數",
+                        "description": "Maximum number of results to return",
                         "default": 10,
                     },
                     "sort_by": {
                         "type": "string",
-                        "description": "排序標準",
+                        "description": "Sorting criterion for results",
                         "enum": ["relevance", "lastUpdatedDate", "submittedDate"],
                         "default": "submittedDate",
                     },
                     "sort_order": {
                         "type": "string",
-                        "description": "排序順序",
+                        "description": "Sort order for results",
                         "enum": ["ascending", "descending"],
                         "default": "descending",
                     },
                     "start_date": {
                         "type": "string",
-                        "description": "開始日期，格式為 YYYY-MM-DD (例如：'2024-01-01')。若提供此參數，也必須提供 end_date。",
+                        "description": "Start date in YYYY-MM-DD format (e.g., '2024-01-01'). If provided, end_date must also be provided.",
                     },
                     "end_date": {
                         "type": "string",
-                        "description": "結束日期，格式為 YYYY-MM-DD (例如：'2024-06-30')。必須大於或等於 start_date。",
+                        "description": "End date in YYYY-MM-DD format (e.g., '2024-06-30'). Must be greater than or equal to start_date.",
                     },
                 },
             },
         ),
         types.Tool(
             name="search_by_id",
-            description="搜尋指定 arXiv ID 的論文",
+            description="Search for a paper with a specific arXiv ID",
             inputSchema={
                 "type": "object",
                 "required": ["paper_id"],
                 "properties": {
                     "paper_id": {
                         "type": "string",
-                        "description": "arXiv 論文 ID (例如：'2503.13399' 或 '2503.13399v1')",
+                        "description": "arXiv paper ID (e.g., '2503.13399' or '2503.13399v1')",
                     },
                 },
             },
         ),
         types.Tool(
             name="search_by_date_range",
-            description="搜尋特定日期範圍內提交的論文，支援多種篩選條件（如類別、作者、標題和摘要）",
+            description="Search for papers submitted within a specific date range with optional filtering criteria",
             inputSchema={
                 "type": "object",
                 "required": ["start_date", "end_date"],
                 "properties": {
                     "start_date": {
                         "type": "string",
-                        "description": "開始日期，格式為 YYYY-MM-DD (例如：'2024-07-01')。會自動轉換為 ArXiv API 所需格式。",
+                        "description": "Start date in YYYY-MM-DD format (e.g., '2024-07-01'). Will be automatically converted to arXiv API format.",
                     },
                     "end_date": {
                         "type": "string",
-                        "description": "結束日期，格式為 YYYY-MM-DD (例如：'2025-02-28')。會自動轉換為 ArXiv API 所需格式。",
+                        "description": "End date in YYYY-MM-DD format (e.g., '2025-02-28'). Will be automatically converted to arXiv API format.",
                     },
                     "category": {
                         "type": "string",
-                        "description": "可選：ArXiv 類別 (例如：'cs.AI', 'physics.optics', 'math.NT')。請參考 arXiv 的所有官方類別代碼。",
+                        "enum": [c.value for c in Category],
+                        "description": "arXiv category code (e.g., 'cs.AI', 'stat.ME'). Search will be limited to papers in this category. See arXiv.org for the full list of category codes.",
                     },
                     "title": {
                         "type": "string",
-                        "description": "可選：搜尋標題中包含的關鍵詞 (例如：'machine learning')。大小寫不敏感。",
+                        "description": "Optional: Keywords to search in paper titles (e.g., 'machine learning'). Case-insensitive.",
                     },
                     "author": {
                         "type": "string",
-                        "description": "可選：搜尋特定作者 (例如：'Hinton')。建議使用姓氏，大小寫不敏感。",
+                        "description": "Optional: Author name to search for (e.g., 'Hinton'). Recommendation: use last name only. Case-insensitive.",
                     },
                     "abstract": {
                         "type": "string",
-                        "description": "可選：搜尋摘要中包含的關鍵詞 (例如：'neural network')。大小寫不敏感。",
+                        "description": "Optional: Keywords to search in paper abstracts (e.g., 'neural network'). Case-insensitive.",
                     },
                     "max_results": {
                         "type": "integer",
-                        "description": "最大返回結果數",
+                        "description": "Maximum number of results to return",
                         "default": 10,
                     },
                     "sort_by": {
                         "type": "string",
-                        "description": "排序標準",
+                        "description": "Sorting criterion for results",
                         "enum": ["relevance", "lastUpdatedDate", "submittedDate"],
                         "default": "submittedDate",
                     },
                     "sort_order": {
                         "type": "string",
-                        "description": "排序順序",
+                        "description": "Sort order for results",
                         "enum": ["ascending", "descending"],
                         "default": "descending",
                     },
@@ -230,21 +284,21 @@ def get_tool_definitions() -> List[types.Tool]:
         ),
         types.Tool(
             name="pdf_to_text",
-            description="將 PDF 檔案轉換為文字，支援將 LaTeX 公式轉為 Markdown 格式",
+            description="Convert a PDF file to text, with support for converting LaTeX formulas to Markdown format",
             inputSchema={
                 "type": "object",
                 "required": ["pdf_path"],
                 "properties": {
                     "pdf_path": {
                         "type": "string",
-                        "description": "PDF 檔案的完整路徑",
+                        "description": "Full path to the PDF file",
                     },
                 },
             },
         ),
         types.Tool(
             name="get_rate_limiter_stats",
-            description="獲取 API 速率限制的統計信息",
+            description="Get statistics on API rate limiting",
             inputSchema={
                 "type": "object",
                 "properties": {},
