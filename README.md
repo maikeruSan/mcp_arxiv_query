@@ -1,130 +1,277 @@
-# MCP ArXiv Query 服務
+# ArXiv Query MCP Server
 
-這是一個基於 MCP (Model Context Protocol) 的 arXiv 論文查詢和下載服務，可與 Claude App 集成使用。
+The ArXiv Query MCP Server is a Model Context Protocol (MCP) implementation that provides AI assistants with capabilities to search, download, and extract text from academic papers on arXiv.
 
-## 功能
+## Features
 
-- 使用各種條件（關鍵字、作者、類別等）搜索 arXiv 論文
-- 下載論文的 PDF 文件
-- PDF 轉文本功能，支援 Mistral OCR API 或本地處理
-- 通過 MCP 協議與 Claude App 集成
+- **Comprehensive Search Options**: Search arXiv papers by ID, author, category, title, abstract, or date range
+- **Paper Downloads**: Download papers as PDF files with automatic caching
+- **Text Extraction**: Convert downloaded PDFs to text with support for Mistral OCR API or local processing
+- **Rate Limiting**: Smart rate limiting to respect arXiv API usage policies
 
-## 安裝
+## Installation
 
-### 構建 Docker 映像
+### Prerequisites
+
+- Docker
+- Python 3.9+
+- Pip package manager
+
+### Docker Installation (Recommended)
 
 ```bash
-chmod +x build_and_test.sh
-./build_and_test.sh
-```
+# Clone the repository
+git clone https://github.com/yourusername/mcp-arxiv-query.git
+cd mcp-arxiv-query
 
-或手動構建：
-
-```bash
+# Build the Docker image
 docker build -t mcp-arxiv-query .
+
+# Test the server
+echo '{"jsonrpc":"2.0","id":1,"method":"list_tools","params":{}}' | \
+  docker run --rm -i mcp-arxiv-query
 ```
 
-## 與 Claude App 配置
+### Local Installation
 
-將以下配置添加到您的 Claude App MCP 配置中：
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/mcp-arxiv-query.git
+cd mcp-arxiv-query
+
+# Install dependencies with uv (recommended)
+uv pip install .
+
+# Or install with pip
+pip install .
+
+# Run the server
+python -m mcp_arxiv_query
+```
+
+## Usage with Claude Desktop
+
+Add the ArXiv Query MCP server to your Claude Desktop configuration file.
+
+### Basic Configuration
 
 ```json
-"arxiv-query": {
-    "command": "docker",
-    "args": [
+{
+  "mcp_servers": {
+    "arxiv-query": {
+      "command": "docker",
+      "args": [
         "run",
         "--rm",
         "-i",
         "-v",
         "$HOME/Downloads:/app/Downloads",
         "mcp-arxiv-query"
-    ]
+      ]
+    }
+  }
 }
 ```
 
-請將 `/Users/yourusername/Downloads` 替換為您本機的下載目錄路徑。
+### Advanced Configuration with OCR Support
 
-### 環境變數配置
-
-使用以下環境變數自定義服務行為：
-
-- `DOWNLOAD_DIR`: 指定 PDF 下載目錄路徑
-- `MISTRAL_OCR_API_KEY`: 設置此變數以啟用 Mistral OCR API 進行 PDF 文字提取
-- `ARXIV_MAX_CALLS_PER_MINUTE`: arXiv API 每分鐘最大請求數 (默認: 30)
-- `ARXIV_MAX_CALLS_PER_DAY`: arXiv API 每天最大請求數 (默認: 2000)
-- `ARXIV_MIN_INTERVAL_SECONDS`: arXiv API 請求間隔秒數 (默認: 1.0)
-
-範例:
 ```json
-"arxiv-query": {
-    "command": "docker",
-    "args": [
+{
+  "mcp_servers": {
+    "arxiv-query": {
+      "command": "docker",
+      "args": [
         "run",
         "--rm",
         "-i",
         "-e", "MISTRAL_OCR_API_KEY=your_api_key_here",
+        "-e", "ARXIV_MAX_CALLS_PER_MINUTE=30",
+        "-e", "ARXIV_MAX_CALLS_PER_DAY=2000",
+        "-e", "LOG_LEVEL=INFO",
         "-v",
         "$HOME/Downloads:/app/Downloads",
         "mcp-arxiv-query"
-    ]
+      ]
+    }
+  }
 }
 ```
 
-## 使用方法
+## Environment Variables
 
-通過 Claude App 中的 MCP 功能，您可以：
+| Variable                   | Description                                          | Default    |
+|----------------------------|------------------------------------------------------|------------|
+| `DOWNLOAD_DIR`             | Directory for PDF downloads                          | /app/Downloads |
+| `MISTRAL_OCR_API_KEY`      | API key for Mistral OCR (optional)                   | None       |
+| `ARXIV_MAX_CALLS_PER_MINUTE` | Maximum arXiv API calls per minute                 | 30         |
+| `ARXIV_MAX_CALLS_PER_DAY`  | Maximum arXiv API calls per day                      | 2000       |
+| `ARXIV_MIN_INTERVAL_SECONDS` | Minimum time between API calls in seconds          | 1.0        |
+| `LOG_LEVEL`                | Logging level (DEBUG, INFO, WARNING, ERROR)          | INFO       |
+| `LOG_FORMAT`               | Set to "json" for JSON-formatted logs                | standard   |
 
-1. 搜索論文：`search_arxiv`, `search_by_category`, `search_by_author`, `search_by_id`, `search_by_date_range`
-2. 下載論文：`download_paper`
-3. 提取 PDF 文字：`pdf_to_text`
-4. 檢查 API 限制狀態：`get_rate_limiter_stats`
+## Claude Integration
 
-範例提示：
+This MCP server is designed to be used with Claude. For a seamless experience, we recommend adding the following instructions to your Claude preferences:
+
 ```
-用這些工具幫我搜尋關於 "large language models" 的最新論文，並下載排名前兩名的論文。
+When I type "@aq <query>", please use the arxiv-query tools to search for academic papers related to my query.
+For example, "@aq Capturing Semantic Flow of ML-based Systems" means search for relevant papers on this topic.
+
+When I type "@ax <arxiv-id>", please: 
+1. Download the paper using the download_paper tool
+2. Extract its text content using the pdf_to_text tool
+3. Be ready to answer my questions about the paper
+
+Examples: "@ax 2503.13415" or "@ax 2503.13415v2"
 ```
 
-## Mistral OCR API 支援
+### Usage Examples
 
-服務支援使用 Mistral OCR API 提取 PDF 文字，比標準 PDF 提取器具有更好的準確性，特別是對於複雜的學術論文。
+Here are some examples of how to interact with Claude using the ArXiv Query tools:
 
-啟用方法:
-1. 從 Mistral AI 獲取 API 密鑰 (https://console.mistral.ai/)
-2. 將 API 密鑰設置為環境變數 `MISTRAL_OCR_API_KEY`
+#### Search for Papers
 
-主要特點:
-- **智能處理流程**: 系統會自動從檔案名提取 arXiv ID，並優先使用 arXiv PDF URL 進行處理，省去本地文件傳輸
-- **備選方案**: 如果無法識別 arXiv ID，則使用本地 PDF 檔案進行處理
-- **自動降級**: 若 Mistral OCR API 無法處理，系統會自動降級使用 PyPDF2
+```
+User: @aq transformer architecture in NLP
 
-注意事項：
-- 使用 URL 方式時，依賴 arXiv 的公共 PDF URL 格式
-- 使用本地檔案方式時，PDF 大小必須小於 20MB
-- 程式使用官方的 `mistral-ocr-latest` 模型
-- 未設置 `MISTRAL_OCR_API_KEY` 時，系統自動使用 PyPDF2 進行本地處理
+Claude: Searching for papers about "transformer architecture in NLP"...
+[Claude would use search_arxiv tool and show results]
 
-## 故障排除
+I found several relevant papers on transformer architecture in NLP:
+1. "Attention Is All You Need" by Vaswani et al.
+2. "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding" by Devlin et al.
+3. ...
+```
 
-### PDF 下載問題
+#### Category-Specific Search
 
-如果您在下載 PDF 時遇到問題：
+```
+User: @aq category:cs.CL language models
 
-1. 確保您的下載目錄具有正確的寫入權限
-2. 確認 Docker 容器已正確掛載該目錄
-3. 執行 `build_and_test.sh` 腳本測試下載功能
-4. 檢查日誌中的詳細錯誤信息
+Claude: Searching for language models papers in the Computation and Language category...
+[Claude would use search_by_category tool]
 
-常見問題：
+Here are the most recent papers about language models in the cs.CL category:
+1. ...
+2. ...
+```
 
-- **找不到文件**：確保 arXiv ID 格式正確，例如 "2303.08774"
-- **無法寫入文件**：檢查下載目錄的權限，確保容器內用戶有寫入權限
-- **Docker 掛載問題**：確保 `-v` 參數正確，格式應為 `-v 主機路徑:/app/Downloads`
-- **Mistral API 錯誤**：檢查 API 密鑰是否正確，以及 PDF 文件是否超過大小限制 (20MB)
-- **arXiv ID 提取問題**：確保 PDF 檔案以標準 arXiv ID 命名，例如 "2303.08774.pdf"
+#### Author Search
 
-### 手動測試下載
+```
+User: @aq author:Hinton recent work
 
-您可以使用以下命令手動測試 PDF 下載功能：
+Claude: Searching for recent papers by Geoffrey Hinton...
+[Claude would use search_by_author tool]
+
+Here are Geoffrey Hinton's recent publications:
+1. ...
+2. ...
+```
+
+#### Download and Analyze a Paper
+
+```
+User: @ax 2203.02155
+
+Claude: I'll download and process the paper with ID 2203.02155 for you.
+[Claude would download the PDF and extract text]
+
+I've downloaded and processed the paper "Training language models to follow instructions with human feedback" by Ouyang et al.
+
+This paper introduces InstructGPT, which is trained to follow human instructions. The key findings are:
+1. ...
+2. ...
+
+Would you like me to analyze any specific section in more detail?
+```
+
+#### Date Range Search
+
+```
+User: @aq diffusion models date:2023-01-01 to:2023-06-30
+
+Claude: Searching for papers about diffusion models published between January and June 2023...
+[Claude would use search_by_date_range tool]
+
+I found 15 papers about diffusion models published in the first half of 2023:
+1. ...
+2. ...
+```
+
+#### Multiple Questions About a Paper
+
+```
+User: @ax 2307.09288
+
+Claude: I'll download and process the paper with ID 2307.09288 for you.
+[Claude would download and process the paper]
+
+I've downloaded and processed the paper "GPT-4 Technical Report" by OpenAI.
+
+User: What methodology did they use for evaluation?
+
+Claude: In the GPT-4 Technical Report, the evaluation methodology includes:
+1. Benchmark testing across multiple domains including...
+2. ...
+```
+
+These examples demonstrate how to leverage the ArXiv Query tools for academic research through Claude's interface using the recommended shortcuts.
+
+## Available Tools
+
+The server provides the following tools:
+
+- `search_arxiv` - Flexible search interface with multiple parameters
+- `download_paper` - Download papers as PDF files
+- `search_by_category` - Search papers by arXiv category
+- `search_by_author` - Search papers by author name
+- `search_by_id` - Search for a specific paper by ID
+- `search_by_date_range` - Search papers within a date range
+- `pdf_to_text` - Convert PDF files to text
+- `get_rate_limiter_stats` - View API usage statistics
+
+## Mistral OCR API Support
+
+The service supports using the Mistral OCR API for PDF text extraction, which provides superior accuracy compared to standard PDF extractors, especially for complex academic papers.
+
+To enable:
+1. Obtain an API key from Mistral AI (https://console.mistral.ai/)
+2. Set the API key as the environment variable `MISTRAL_OCR_API_KEY`
+
+Key features:
+- **Intelligent Processing**: The system automatically extracts arXiv IDs from filenames and prioritizes using arXiv PDF URLs for processing, eliminating local file transfers
+- **Fallback Options**: If an arXiv ID cannot be identified, the system processes the local PDF file
+- **Automatic Degradation**: If Mistral OCR API fails, the system automatically falls back to PyPDF2
+
+Notes:
+- When using URL mode, the system relies on arXiv's public PDF URL format
+- When using local file mode, PDF size must be less than 20MB
+- The program uses the official `mistral-ocr-latest` model
+- Without setting `MISTRAL_OCR_API_KEY`, the system automatically uses PyPDF2 for local processing
+
+## Troubleshooting
+
+### PDF Download Issues
+
+If you encounter problems downloading PDFs:
+
+1. Ensure your download directory has appropriate permissions
+2. Verify Docker volume mounting is correct
+3. Run the `build_and_test.sh` script to test download functionality
+4. Check logs for detailed error messages
+
+Common issues:
+
+- **File Not Found**: Ensure the arXiv ID format is correct, e.g., "2303.08774"
+- **Cannot Write File**: Check download directory permissions, ensure the container user has write access
+- **Docker Mount Issues**: Ensure the `-v` parameter is correct, format should be `-v host_path:/app/Downloads`
+- **Mistral API Errors**: Check if the API key is correct and if the PDF file exceeds the size limit (20MB)
+- **arXiv ID Extraction Problems**: Ensure the PDF file is named with a standard arXiv ID, e.g., "2303.08774.pdf"
+
+### Manual Download Testing
+
+You can manually test the PDF download functionality with the following command:
 
 ```bash
 docker run --rm -i \
@@ -132,19 +279,22 @@ docker run --rm -i \
   mcp-arxiv-query python -c "from mcp_arxiv_query.downloader import ArxivDownloader; downloader = ArxivDownloader('/app/Downloads'); result = downloader.download_paper('2303.08774'); print(result)"
 ```
 
-## 開發
+## Development
 
-此服務基於 MCP 協議和 `arxiv_query_fluent` Python 庫構建。
+This service is built on the MCP protocol and the `arxiv_query_fluent` Python library.
 
-### 目錄結構
+### Directory Structure
 
-- `src/mcp_arxiv_query/`: 源代碼
-   - `__init__.py`: 包初始化
-   - `__main__.py`: 入口點
-   - `server.py`: MCP 服務器實現
-   - `pdf_utils.py`: PDF 文字提取工具
-   - `arxiv_service.py`: arXiv API 服務封裝
+- `src/mcp_arxiv_query/`: Source code
+  - `__init__.py`: Package initialization
+  - `__main__.py`: Entry point
+  - `server.py`: MCP server implementation
+  - `pdf_utils.py`: PDF text extraction tools
+  - `arxiv_service.py`: arXiv API service wrapper
+  - `rate_limiter.py`: API rate limiting
+  - `tools.py`: Tool definitions
+  - `logger.py`: Logging configuration
 
-## 貢獻
+## License
 
-歡迎您的貢獻！請開啟 issue 或提交 pull request。
+This project is licensed under the [MIT License](LICENSE).

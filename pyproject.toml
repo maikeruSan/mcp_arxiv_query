@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=42"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,11 +7,14 @@ name = "mcp_arxiv_query"
 version = "0.1.0"
 description = "MCP service for arXiv paper search using arxiv_query_fluent"
 readme = "README.md"
-requires-python = ">=3.9"
+authors = [
+  {name="Michael Lee", email="michael@ifugood.com"},
+]
+requires-python = ">=3.10"
+# license field removed to avoid issues
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
 ]
 dependencies = [
     "mcp>=1.0.0",
@@ -21,8 +24,13 @@ dependencies = [
     "PyPDF2"
 ]
 
+[project.urls]
+Homepage = "https://github.com/maikeruSan/mcp_arxiv_query"
+Repository = "https://github.com/maikeruSan/mcp_arxiv_query"
+
 [project.scripts]
 mcp-arxiv-query = "mcp_arxiv_query:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+packages = ["src"]
+
